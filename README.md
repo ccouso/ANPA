@@ -1,6 +1,19 @@
 # ANPA Comedor
 
+[![Tests](https://github.com/ccouso/ANPA/actions/workflows/tests.yml/badge.svg)](https://github.com/ccouso/ANPA/actions/workflows/tests.yml)
+[![Docker publish](https://github.com/ccouso/ANPA/actions/workflows/docker-release.yml/badge.svg)](https://github.com/ccouso/ANPA/actions/workflows/docker-release.yml)
+[![Release](https://img.shields.io/github/v/release/ccouso/ANPA?display_name=tag)](https://github.com/ccouso/ANPA/releases)
+[![Dependencies](https://img.shields.io/badge/dependencies-11-blue)](./requirements.txt)
+[![Python](https://img.shields.io/badge/python-3.12-3776AB)](https://www.python.org/)
+
 Aplicación web para la gestión del comedor escolar de ANPA.
+
+## Métricas visibles en este README
+
+- **Versión**: badge de release (`vX.Y.Z`) desde GitHub Releases.
+- **Testeado**: badge del workflow `Tests` (pytest en cada push/PR).
+- **Publicación Docker**: badge del workflow `docker-release`.
+- **Dependencias**: badge con el total actual de `requirements.txt`.
 
 ## Estructura del proyecto
 
@@ -41,8 +54,9 @@ Ejemplo mínimo:
 ```dotenv
 APP_SECRET=tu-clave-muy-segura
 COOKIE_SECURE=true
+APP_PORT=8000
 APP_VERSION=latest
-ANPA_IMAGE=ghcr.io/tu-usuario/anpa
+ANPA_IMAGE=ghcr.io/ccouso/anpa
 ```
 
 ## Ejecutar localmente
@@ -88,7 +102,7 @@ APP_VERSION=1.2.0 docker compose -f deploy/docker/docker-compose.yml up -d
 ### Opción 3: usar una imagen de GHCR
 
 ```bash
-ANPA_IMAGE=ghcr.io/tu-usuario/anpa APP_VERSION=1.2.0 docker compose -f deploy/docker/docker-compose.yml up -d
+ANPA_IMAGE=ghcr.io/ccouso/anpa APP_VERSION=1.2.0 docker compose -f deploy/docker/docker-compose.yml up -d
 ```
 
 ## Publicación automática de versiones
@@ -99,11 +113,33 @@ El workflow de GitHub Actions en `.github/workflows/docker-release.yml` construy
 
 Esto permite que el compose use `latest` o una etiqueta concreta según quieras.
 
-## Portainer / NAS / servidor remoto
+## Portainer (NAS) con repositorio público
 
-En Portainer o en un servidor se puede desplegar con `docker compose` usando la imagen del registro y configurando las variables de entorno del `.env`.
+Como ahora el repositorio e imagen son públicos, puedes desplegar sin credenciales.
 
-Si usas GitHub Container Registry (GHCR), el acceso dependerá de si el repositorio y el paquete son públicos o privados.
+1. Ve a **Stacks > Add stack > Repository**.
+2. Repo URL: `https://github.com/ccouso/ANPA.git`
+3. Branch/Reference: `main` (o la tag/branch que quieras).
+4. Compose path: `deploy/docker/docker-compose.yml`
+5. En variables del stack define:
+   - `APP_SECRET=...` (obligatorio)
+   - `COOKIE_SECURE=false` (si accedes por HTTP local; con HTTPS usa `true`)
+   - `APP_PORT=8050` (o el puerto local que quieras publicar)
+   - `ANPA_IMAGE=ghcr.io/ccouso/anpa`
+   - `APP_VERSION=latest` o una versión concreta como `v1.2.0`
+6. Deploy.
+
+Acceso local:
+
+```text
+http://IP_DE_TU_NAS:8050/login
+```
+
+### Cambiar de versión en Portainer
+
+- Edita solo `APP_VERSION` y redeploy:
+  - Última: `latest`
+  - Fija: `v1.2.0` (o la que exista en Releases)
 
 ## Recomendaciones
 
