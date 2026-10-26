@@ -1,21 +1,62 @@
-# ANPA Comedor - Despliegue con Docker Compose
+# ANPA Comedor
 
-Este proyecto está preparado para desplegarse en local o en un NAS con Portainer.
+Aplicación web para la gestión del comedor escolar de ANPA.
 
-## 1) Requisitos
+## Estructura del proyecto
 
-- Docker y Docker Compose
-- Un archivo `.env` con al menos:
-  - `APP_SECRET=<secreto-largo-y-unico>`
-  - `COOKIE_SECURE=true` (recomendado en producción)
+```text
+.
+├── src/
+├── templates/
+├── tests/
+├── data/                  # persistencia local para SQLite
+├── deploy/
+│   └── docker/
+│       ├── Dockerfile
+│       └── docker-compose.yml
+├── .env.example
+├── .gitignore
+├── docker-compose.yml     # compatibilidad local / versión rápida
+├── requirements.txt
+├── main.py
+└── README.md
+```
 
-## 2) Ejecutar en local
+La idea es separar:
+- `src/`: código de la aplicación
+- `templates/`: plantillas HTML
+- `tests/`: pruebas
+- `data/`: base de datos SQLite persistente local
+- `deploy/docker/`: assets de despliegue, Docker y Compose
+
+## Variables de entorno
+
+Copia `.env.example` a `.env` y ajusta los valores:
+
+```bash
+cp .env.example .env
+```
+
+Ejemplo mínimo:
+
+```dotenv
+APP_SECRET=tu-clave-muy-segura
+COOKIE_SECURE=true
+APP_VERSION=latest
+ANPA_IMAGE=ghcr.io/tu-usuario/anpa
+```
+
+## Ejecutar localmente
 
 ```bash
 docker compose up -d --build
 ```
 
-Abrir: `http://localhost:8000/login`
+Abrir la app en:
+
+```text
+http://localhost:8000/login
+```
 
 Parar:
 
@@ -23,35 +64,51 @@ Parar:
 docker compose down
 ```
 
-## 3) Persistencia de datos
+## Persistencia de datos
 
-El `docker-compose.yml` usa un volumen persistente `anpa_data` para SQLite:
+La base de datos SQLite se guarda en un volumen persistente `anpa_data` dentro del contenedor en `/data/comedor.db`.
 
-- Base de datos en contenedor: `/data/comedor.db`
-- `DATABASE_URL` se configura automáticamente como `sqlite:////data/comedor.db`
+En local, la carpeta `data/` se usa como punto de almacenamiento del host para evitar que la DB quede mezclada con el código fuente.
 
-## 4) Despliegue en NAS + Portainer (recomendado)
+## Versionado y despliegue con Docker Compose
 
-### Opción habitual (Stack desde Git)
+El proyecto está preparado para trabajar con versiones de imagen y despliegues reproducibles.
 
-1. Sube este proyecto a un repositorio GitHub.
-2. En Portainer: **Stacks > Add stack > Repository**.
-3. Indica:
-   - URL del repo
-   - Rama (`main` o la que uses)
-   - Ruta compose: `docker-compose.yml`
-4. Configura variables de entorno seguras (`APP_SECRET`, etc.).
-5. Deploy.
+### Opción 1: usar la última imagen publicada
 
-### Actualizar con cambios de GitHub
+```bash
+APP_VERSION=latest docker compose up -d
+```
 
-- En Portainer: **Pull and redeploy** del stack, o
-- Configura un **webhook** de Portainer y llámalo desde tu flujo CI/CD tras cada push a `main`.
+### Opción 2: usar una versión concreta
 
-Ese flujo te permite mantener la app con un update sencillo sin tocar manualmente el servidor.
+```bash
+APP_VERSION=1.2.0 docker compose up -d
+```
 
-## 5) Notas de producción
+### Opción 3: usar una imagen de GHCR
 
-- Usa un `APP_SECRET` robusto y privado.
-- Publica detrás de un proxy reverso con HTTPS (Nginx/Traefik/Caddy) para que `COOKIE_SECURE=true` funcione correctamente.
-- Haz backups periódicos del volumen `anpa_data`.
+```bash
+ANPA_IMAGE=ghcr.io/tu-usuario/anpa APP_VERSION=1.2.0 docker compose up -d
+```
+
+## Publicación automática de versiones
+
+El workflow de GitHub Actions en `.github/workflows/docker-release.yml` construye y publica imágenes a GHCR cuando:
+- haces push a `main`, o
+- creas una etiqueta tipo `v1.2.0`
+
+Esto permite que el compose use `latest` o una etiqueta concreta según quieras.
+
+## Portainer / NAS / servidor remoto
+
+En Portainer o en un servidor se puede desplegar con `docker compose` usando la imagen del registro y configurando las variables de entorno del `.env`.
+
+Si usas GitHub Container Registry (GHCR), el acceso dependerá de si el repositorio y el paquete son públicos o privados.
+
+## Recomendaciones
+
+- Nunca subas secretos al repositorio.
+- Mantén `.env` local y fuera de Git.
+- Haz backups del volumen `/data` o de la carpeta `data/`.
+- Revisa el changelog y etiqueta cada versión antes de publicarla.

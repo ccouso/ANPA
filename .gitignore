@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+venv/
+
+# IDE/editor
+.vscode/
+.idea/
+
+# Environment and local secrets
+.env
+.env.*
+!.env.example
+
+# App data
+comedor.db
+*.db
+/data/
+!data/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
