@@ -107,6 +107,16 @@ def _selected_days(value: str) -> list[str]:
     return [day for day in ["L", "M", "X", "J", "V"] if day in value.upper().replace(" ", "")]
 
 
+def _validate_password_change(password: str, password_confirm: str, current_hashed_password: str) -> str | None:
+    if len(password) < 8:
+        return "La contraseña debe tener al menos 8 caracteres."
+    if password != password_confirm:
+        return "Las contraseñas no coinciden."
+    if verify_password(password, current_hashed_password):
+        return "La nueva contraseña debe ser distinta a la contraseña provisional asignada por el administrador."
+    return None
+
+
 def _build_family_dashboard_context(
     session: Session,
     user: User,
@@ -275,18 +285,12 @@ async def change_password_submit(
     password_confirm: Annotated[str, Form()] = "",
 ):
     user = await require_user(request, session)
-    if len(password) < 8:
+    validation_error = _validate_password_change(password, password_confirm, user.hashed_password)
+    if validation_error:
         return templates.TemplateResponse(
             request,
             "login.html",
-            {"change_password_required": True, "user_email": user.email, "error": "La contraseña debe tener al menos 8 caracteres."},
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-    if password != password_confirm:
-        return templates.TemplateResponse(
-            request,
-            "login.html",
-            {"change_password_required": True, "user_email": user.email, "error": "Las contraseñas no coinciden."},
+            {"change_password_required": True, "user_email": user.email, "error": validation_error},
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
