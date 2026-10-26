@@ -1,8 +1,10 @@
 import os
 from collections.abc import Generator
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, Session, SQLModel, create_engine
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/comedor.db")
@@ -47,6 +49,16 @@ class Student(SQLModel, table=True):
     aula_matinal_breakfast: bool = Field(default=False, nullable=False)
     extras: str = Field(default="", nullable=False)
     excursion_authorized: bool = Field(default=False, nullable=False)
+
+
+class StudentAttendanceNotice(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint("student_id", "notice_date", name="uq_student_notice_day"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    student_id: int = Field(foreign_key="student.id", nullable=False, index=True)
+    notice_date: date = Field(nullable=False, index=True)
+    skip_comedor: bool = Field(default=False, nullable=False)
+    skip_aula_matinal: bool = Field(default=False, nullable=False)
 
 
 class ExtracurricularActivity(SQLModel, table=True):

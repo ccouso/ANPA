@@ -11,7 +11,16 @@ from pydantic import ValidationError
 from sepaxml import SepaTransfer
 from sqlmodel import Session, select
 
-from .database import ExtracurricularActivity, FamilyProfile, Student, User, create_db_and_tables, engine, get_session
+from .database import (
+    ExtracurricularActivity,
+    FamilyProfile,
+    Student,
+    StudentAttendanceNotice,
+    User,
+    create_db_and_tables,
+    engine,
+    get_session,
+)
 from .pricing import DEFAULT_EXTRA_COSTS, calculate_student_total
 from .schemas import FamilyForm
 from .security import (
@@ -27,6 +36,16 @@ from .security import (
 
 templates = Jinja2Templates(directory="templates")
 app = FastAPI(title="Comedor Escolar ANPA", version="1.2.0")
+
+WEEKDAY_SEQUENCE = [("L", "Lunes"), ("M", "Martes"), ("X", "Miércoles"), ("J", "Jueves"), ("V", "Viernes")]
+EXTRA_DAY_MAP = {
+    "lunes": "L",
+    "martes": "M",
+    "miercoles": "X",
+    "miércoles": "X",
+    "jueves": "J",
+    "viernes": "V",
+}
 
 FOOD_INTOLERANCE_OPTIONS = [
     "Gluten",
@@ -87,6 +106,36 @@ def _normalize_list_items(raw_value: str) -> list[str]:
     return clean
 
 
+COUNTRY_PHONE_PREFIXES = [
+    "+34",
+    "+1",
+    "+44",
+    "+33",
+    "+49",
+    "+351",
+    "+52",
+    "+54",
+    "+61",
+    "+65",
+    "+81",
+    "+971",
+    "+966",
+]
+
+
+def _split_phone(value: str) -> tuple[str, str]:
+    clean_value = (value or "").strip()
+    if not clean_value:
+        return "+34", ""
+    for prefix in sorted(COUNTRY_PHONE_PREFIXES, key=len, reverse=True):
+        if clean_value.startswith(prefix):
+            number = clean_value[len(prefix) :].strip()
+            return prefix, number
+    if clean_value.startswith("+"):
+        return clean_value[:4] if len(clean_value) > 4 else clean_value, clean_value[4:].strip()
+    return "+34", clean_value.replace(" ", "")
+
+
 def _validate_allergy_items(items: list[str]) -> str | None:
     for item in items:
         if not item.lower().startswith("otro:"):
@@ -117,6 +166,66 @@ def _validate_password_change(password: str, password_confirm: str, current_hash
     return None
 
 
+def _parse_extra_day_letter(schedule: str) -> str | None:
+    if not schedule:
+        return None
+    day_token = schedule.strip().split(" ", 1)[0].lower()
+    return EXTRA_DAY_MAP.get(day_token)
+
+
+def _build_week_days(today: date | None = None) -> list[dict]:
+    base_day = today or date.today()
+    week_start = base_day - timedelta(days=base_day.weekday())
+    week_days: list[dict] = []
+    for offset, (letter, label) in enumerate(WEEKDAY_SEQUENCE):
+        day_date = week_start + timedelta(days=offset)
+        week_days.append(
+            {
+                "letter": letter,
+                "label": label,
+                "date": day_date,
+                "date_iso": day_date.isoformat(),
+                "short_label": f"{label[:3]} {day_date.day:02d}",
+            }
+        )
+    return week_days
+
+
+def _build_weekly_student_services(
+    students: list[Student],
+    activities: list[ExtracurricularActivity],
+    notices: list[StudentAttendanceNotice],
+    week_days: list[dict],
+) -> dict[int, dict[str, dict]]:
+    activity_day_by_name = {activity.name: _parse_extra_day_letter(activity.schedule) for activity in activities}
+    notice_map = {(notice.student_id, notice.notice_date.isoformat()): notice for notice in notices}
+
+    weekly_services: dict[int, dict[str, dict]] = {}
+    for student in students:
+        comedor_days = set(_selected_days(student.comedor_days))
+        matinal_days = set(_selected_days(student.aula_matinal_days))
+        selected_extras = _normalize_list_items(student.extras)
+        student_days: dict[str, dict] = {}
+
+        for day in week_days:
+            day_letter = day["letter"]
+            day_iso = day["date_iso"]
+            extras_for_day = [name for name in selected_extras if activity_day_by_name.get(name) == day_letter]
+            notice = notice_map.get((student.id, day_iso))
+
+            student_days[day_iso] = {
+                "comedor_contracted": day_letter in comedor_days,
+                "aula_matinal_contracted": day_letter in matinal_days,
+                "extras": extras_for_day,
+                "skip_comedor": bool(notice and notice.skip_comedor),
+                "skip_aula_matinal": bool(notice and notice.skip_aula_matinal),
+            }
+
+        weekly_services[student.id] = student_days
+
+    return weekly_services
+
+
 def _build_family_dashboard_context(
     session: Session,
     user: User,
@@ -136,9 +245,31 @@ def _build_family_dashboard_context(
         students = session.exec(select(Student).where(Student.family_id == profile_db.id)).all()
         total = round(sum(student_total_fn(student) for student in students), 2)
 
+    week_days = _build_week_days()
+    week_start = week_days[0]["date"]
+    week_end = week_days[-1]["date"]
+    student_ids = [student.id for student in students if student.id is not None]
+    notices: list[StudentAttendanceNotice] = []
+    if student_ids:
+        notice_statement = (
+            select(StudentAttendanceNotice)
+            .where(StudentAttendanceNotice.notice_date >= week_start)
+            .where(StudentAttendanceNotice.notice_date <= week_end)
+        )
+        notices = [notice for notice in session.exec(notice_statement).all() if notice.student_id in student_ids]
+    weekly_student_services = _build_weekly_student_services(students, activities, notices, week_days)
+
+    profile_obj = profile_override if profile_override is not None else profile_db
+    raw_phone = ""
+    if isinstance(profile_obj, dict):
+        raw_phone = str(profile_obj.get("phone") or "")
+    elif profile_obj is not None:
+        raw_phone = str(profile_obj.phone or "")
+    phone_prefix, phone_number = _split_phone(raw_phone)
+
     return {
         "user": user,
-        "profile": profile_override if profile_override is not None else profile_db,
+        "profile": profile_obj,
         "profile_saved": profile_db is not None,
         "profile_edit_mode": profile_edit_mode,
         "active_section": active_section,
@@ -148,6 +279,10 @@ def _build_family_dashboard_context(
         "student_total": student_total_fn,
         "extracurricular_activities": activities,
         "food_intolerance_options": FOOD_INTOLERANCE_OPTIONS,
+        "week_days": week_days,
+        "weekly_student_services": weekly_student_services,
+        "phone_prefix": phone_prefix,
+        "phone_number": phone_number,
     }
 
 
@@ -322,6 +457,7 @@ async def dashboard_page(
 
     allowed_sections = {"home", "perfil", "estudiantes"}
     active_section = section if section in allowed_sections else "home"
+    attendance_status = request.query_params.get("attendance_status", "")
 
     editing_student: Student | None = None
     if active_section == "estudiantes" and edit_student_id is not None:
@@ -336,6 +472,7 @@ async def dashboard_page(
         profile_edit_mode=edit_profile,
         editing_student=editing_student,
     )
+    context["attendance_status"] = attendance_status
     return templates.TemplateResponse(request, "dashboard.html", context)
 
 
@@ -345,17 +482,19 @@ async def save_family_profile(
     session: Session = Depends(get_session),
     parent_name: Annotated[str, Form()] = "",
     dni_nie: Annotated[str, Form()] = "",
-    phone: Annotated[str, Form()] = "",
+    phone_prefix: Annotated[str, Form()] = "+34",
+    phone_number: Annotated[str, Form()] = "",
     email: Annotated[str, Form()] = "",
     iban: Annotated[str, Form()] = "",
     sepa_accepted: Annotated[bool, Form()] = False,
 ):
     user = await require_user(request, session)
 
+    full_phone = f"{phone_prefix}{phone_number.strip()}" if phone_number.strip() else phone_prefix
     form_values = {
         "parent_name": parent_name,
         "dni_nie": dni_nie,
-        "phone": phone,
+        "phone": full_phone,
         "email": email,
         "iban": iban,
         "sepa_accepted": sepa_accepted,
@@ -394,6 +533,59 @@ async def save_family_profile(
 
     session.commit()
     return RedirectResponse(url="/dashboard?section=perfil", status_code=status.HTTP_302_FOUND)
+
+
+@app.post("/dashboard/attendance")
+async def save_attendance_notice(
+    request: Request,
+    session: Session = Depends(get_session),
+    student_id: Annotated[int, Form()] = 0,
+    notice_date: Annotated[str, Form()] = "",
+    skip_comedor: Annotated[bool, Form()] = False,
+    skip_aula_matinal: Annotated[bool, Form()] = False,
+):
+    user = await require_user(request, session)
+    profile = _get_family_profile(session, user.id)
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Primero completa tus datos de familia.")
+
+    student = _get_owned_student(session, profile.id, student_id)
+    if not student:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alumno no encontrado.")
+
+    try:
+        notice_day = date.fromisoformat(notice_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fecha de aviso no válida.") from exc
+
+    existing_notice = session.exec(
+        select(StudentAttendanceNotice)
+        .where(StudentAttendanceNotice.student_id == student.id)
+        .where(StudentAttendanceNotice.notice_date == notice_day)
+    ).first()
+
+    if not skip_comedor and not skip_aula_matinal:
+        if existing_notice:
+            session.delete(existing_notice)
+            session.commit()
+        return RedirectResponse(url="/dashboard?section=home&attendance_status=cleared", status_code=status.HTTP_302_FOUND)
+
+    if existing_notice:
+        existing_notice.skip_comedor = skip_comedor
+        existing_notice.skip_aula_matinal = skip_aula_matinal
+        session.add(existing_notice)
+    else:
+        session.add(
+            StudentAttendanceNotice(
+                student_id=student.id,
+                notice_date=notice_day,
+                skip_comedor=skip_comedor,
+                skip_aula_matinal=skip_aula_matinal,
+            )
+        )
+
+    session.commit()
+    return RedirectResponse(url="/dashboard?section=home&attendance_status=saved", status_code=status.HTTP_302_FOUND)
 
 
 @app.post("/dashboard/student")
