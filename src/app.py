@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+import csv
+import os
+import secrets
+import smtplib
+import ssl
+from io import StringIO
 from datetime import date, datetime, time, timedelta
+from email.message import EmailMessage
 from pathlib import Path
 from typing import Annotated
+from urllib.parse import urlencode
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, status
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile, status
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
+from sqlalchemy.exc import SQLAlchemyError
 from sepaxml import SepaTransfer
 from sqlmodel import Session, select
 
@@ -281,6 +290,112 @@ def _build_weekly_student_services(
         weekly_services[student.id] = student_days
 
     return weekly_services
+
+
+def _build_admin_user_display_name(role: str, email: str, family_name: str | None) -> str:
+    if role == "familia" and family_name:
+        return family_name
+    local_part = email.split("@", 1)[0].strip()
+    return local_part or email
+
+
+def _generate_provisional_password(length: int = 12) -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*?"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+def _is_valid_user_email(email: str) -> bool:
+    if "@" not in email:
+        return False
+    local, domain = email.split("@", 1)
+    if not local or not domain:
+        return False
+    if "." not in domain:
+        return False
+    return True
+
+
+def _extract_emails_from_csv_content(csv_text: str) -> list[str]:
+    lines = [line for line in csv_text.splitlines() if line.strip()]
+    if not lines:
+        return []
+    sample = "\n".join(lines[:5]).lower()
+    has_email_header = "email" in sample or "correo" in sample
+    emails: list[str] = []
+    if has_email_header:
+        reader = csv.DictReader(lines)
+        for row in reader:
+            if not row:
+                continue
+            raw_email = str(row.get("email") or row.get("Email") or row.get("correo") or row.get("Correo") or "").strip()
+            if raw_email:
+                emails.append(raw_email.lower())
+        return emails
+
+    reader = csv.reader(lines)
+    for row in reader:
+        if not row:
+            continue
+        raw_email = str(row[0]).strip()
+        if raw_email:
+            emails.append(raw_email.lower())
+    return emails
+
+
+def _send_provisional_password_email(recipient_email: str, provisional_password: str, role: str) -> None:
+    smtp_host = os.getenv("SMTP_HOST", "").strip()
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_username = os.getenv("SMTP_USERNAME", "").strip()
+    smtp_password = os.getenv("SMTP_PASSWORD", "").strip()
+    smtp_from_email = os.getenv("SMTP_FROM_EMAIL", "").strip() or smtp_username
+    smtp_from_name = os.getenv("SMTP_FROM_NAME", "ANPA Comedor").strip() or "ANPA Comedor"
+    smtp_use_tls = os.getenv("SMTP_USE_TLS", "true").strip().lower() in {"1", "true", "yes"}
+    smtp_use_ssl = os.getenv("SMTP_USE_SSL", "false").strip().lower() in {"1", "true", "yes"}
+    app_public_url = os.getenv("APP_PUBLIC_URL", "http://localhost:8000").strip() or "http://localhost:8000"
+
+    if not smtp_host:
+        raise ValueError("SMTP_HOST no configurado.")
+    if not smtp_from_email:
+        raise ValueError("SMTP_FROM_EMAIL o SMTP_USERNAME debe estar configurado.")
+    if smtp_username and not smtp_password:
+        raise ValueError("SMTP_PASSWORD no configurado.")
+
+    message = EmailMessage()
+    message["Subject"] = "Acceso ANPA: contraseña provisional"
+    message["From"] = f"{smtp_from_name} <{smtp_from_email}>"
+    message["To"] = recipient_email
+    message.set_content(
+        "\n".join(
+            [
+                "Hola,",
+                "",
+                f"Se ha creado tu usuario de tipo '{role}' en la plataforma ANPA.",
+                f"Email: {recipient_email}",
+                f"Contraseña provisional: {provisional_password}",
+                "",
+                f"Accede en: {app_public_url}/login",
+                "Por seguridad, deberás cambiar la contraseña en el primer inicio de sesión.",
+                "",
+                "Este es un mensaje automático, por favor no respondas a este correo.",
+            ]
+        )
+    )
+
+    if smtp_use_ssl:
+        with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15) as smtp:
+            if smtp_username:
+                smtp.login(smtp_username, smtp_password)
+            smtp.send_message(message)
+        return
+
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as smtp:
+        smtp.ehlo()
+        if smtp_use_tls:
+            smtp.starttls(context=ssl.create_default_context())
+            smtp.ehlo()
+        if smtp_username:
+            smtp.login(smtp_username, smtp_password)
+        smtp.send_message(message)
 
 
 def _build_student_monthly_breakdown(student: Student, extra_price_map: dict[str, float]) -> dict[str, float | int]:
@@ -568,7 +683,7 @@ async def login(
         set_auth_cookie(redirect, token)
         return redirect
 
-    target = "/admin" if user.role == "admin" else "/dashboard"
+    target = "/admin" if user.role == "admin" else "/user_family"
     redirect = RedirectResponse(url=target, status_code=status.HTTP_302_FOUND)
     set_auth_cookie(redirect, token)
     return redirect
@@ -585,7 +700,7 @@ async def logout():
 async def change_password_page(request: Request, session: Session = Depends(get_session)):
     user = await require_user(request, session)
     if not user.must_change_password:
-        target = "/admin" if user.role == "admin" else "/dashboard"
+        target = "/admin" if user.role == "admin" else "/user_family"
         return RedirectResponse(url=target, status_code=status.HTTP_302_FOUND)
     return templates.TemplateResponse(
         request,
@@ -616,13 +731,13 @@ async def change_password_submit(
     session.add(user)
     session.commit()
 
-    target = "/admin" if user.role == "admin" else "/dashboard"
+    target = "/admin" if user.role == "admin" else "/user_family"
     redirect = RedirectResponse(url=target, status_code=status.HTTP_302_FOUND)
     return redirect
 
 
-@app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard_page(
+@app.get("/user_family", response_class=HTMLResponse)
+async def user_family_page(
     request: Request,
     session: Session = Depends(get_session),
     section: str = "home",
@@ -663,10 +778,15 @@ async def dashboard_page(
         editing_contact=editing_contact,
     )
     context["attendance_status"] = attendance_status
-    return templates.TemplateResponse(request, "dashboard.html", context)
+    return templates.TemplateResponse(request, "user_family.html", context)
 
 
-@app.post("/dashboard/profile")
+@app.get("/dashboard")
+async def legacy_dashboard_redirect():
+    return RedirectResponse(url="/user_family", status_code=status.HTTP_302_FOUND)
+
+
+@app.post("/user_family/profile")
 async def save_family_profile(
     request: Request,
     session: Session = Depends(get_session),
@@ -707,7 +827,7 @@ async def save_family_profile(
                 "form_errors": {item["loc"][0]: True for item in exc.errors() if item.get("loc")},
             }
         )
-        return templates.TemplateResponse(request, "dashboard.html", context, status_code=status.HTTP_400_BAD_REQUEST)
+        return templates.TemplateResponse(request, "user_family.html", context, status_code=status.HTTP_400_BAD_REQUEST)
 
     profile = _get_family_profile(session, user.id)
     if profile is None:
@@ -722,10 +842,10 @@ async def save_family_profile(
         profile.sepa_accepted = form.sepa_accepted
 
     session.commit()
-    return RedirectResponse(url="/dashboard?section=perfil", status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url="/user_family?section=perfil", status_code=status.HTTP_302_FOUND)
 
 
-@app.post("/dashboard/attendance")
+@app.post("/user_family/attendance")
 async def save_attendance_notice(
     request: Request,
     session: Session = Depends(get_session),
@@ -759,17 +879,17 @@ async def save_attendance_notice(
         today = date.today()
         if not _is_comedor_day_contracted(student, notice_day):
             return RedirectResponse(
-                url="/dashboard?section=home&attendance_status=comedor_not_available",
+                url="/user_family?section=home&attendance_status=comedor_not_available",
                 status_code=status.HTTP_302_FOUND,
             )
         if notice_day < today and not already_marked_comedor:
             return RedirectResponse(
-                url="/dashboard?section=home&attendance_status=comedor_not_available",
+                url="/user_family?section=home&attendance_status=comedor_not_available",
                 status_code=status.HTTP_302_FOUND,
             )
         if notice_day == today and datetime.now().time() >= COMEDOR_NOTICE_CUTOFF_TIME and not already_marked_comedor:
             return RedirectResponse(
-                url="/dashboard?section=home&attendance_status=comedor_not_available",
+                url="/user_family?section=home&attendance_status=comedor_not_available",
                 status_code=status.HTTP_302_FOUND,
             )
 
@@ -777,7 +897,7 @@ async def save_attendance_notice(
         if existing_notice:
             session.delete(existing_notice)
             session.commit()
-        return RedirectResponse(url="/dashboard?section=home&attendance_status=cleared", status_code=status.HTTP_302_FOUND)
+        return RedirectResponse(url="/user_family?section=home&attendance_status=cleared", status_code=status.HTTP_302_FOUND)
 
     if existing_notice:
         existing_notice.skip_comedor = skip_comedor
@@ -794,10 +914,10 @@ async def save_attendance_notice(
         )
 
     session.commit()
-    return RedirectResponse(url="/dashboard?section=home&attendance_status=saved", status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url="/user_family?section=home&attendance_status=saved", status_code=status.HTTP_302_FOUND)
 
 
-@app.post("/dashboard/student")
+@app.post("/user_family/student")
 async def add_student(
     request: Request,
     session: Session = Depends(get_session),
@@ -831,27 +951,27 @@ async def add_student(
     if allergies_error:
         context = _build_family_dashboard_context(session, user, active_section="estudiantes", editing_student=None)
         context.update({"error": allergies_error})
-        return templates.TemplateResponse(request, "dashboard.html", context, status_code=status.HTTP_400_BAD_REQUEST)
+        return templates.TemplateResponse(request, "user_family.html", context, status_code=status.HTTP_400_BAD_REQUEST)
 
     if not cleaned_course:
         context = _build_family_dashboard_context(session, user, active_section="estudiantes", editing_student=None)
         context.update({"error": "El curso del alumno es obligatorio."})
-        return templates.TemplateResponse(request, "dashboard.html", context, status_code=status.HTTP_400_BAD_REQUEST)
+        return templates.TemplateResponse(request, "user_family.html", context, status_code=status.HTTP_400_BAD_REQUEST)
 
     if comedor_enabled and not comedor_selected:
         context = _build_family_dashboard_context(session, user, active_section="estudiantes", editing_student=None)
         context.update({"error": "Si activas el comedor, debe haber al menos un día seleccionado."})
-        return templates.TemplateResponse(request, "dashboard.html", context, status_code=status.HTTP_400_BAD_REQUEST)
+        return templates.TemplateResponse(request, "user_family.html", context, status_code=status.HTTP_400_BAD_REQUEST)
 
     if aula_matinal_enabled and not matinal_selected:
         context = _build_family_dashboard_context(session, user, active_section="estudiantes", editing_student=None)
         context.update({"error": "Si activas el aula matinal, debe haber al menos un día seleccionado."})
-        return templates.TemplateResponse(request, "dashboard.html", context, status_code=status.HTTP_400_BAD_REQUEST)
+        return templates.TemplateResponse(request, "user_family.html", context, status_code=status.HTTP_400_BAD_REQUEST)
 
     if not first_name.strip() or not last_name.strip():
         context = _build_family_dashboard_context(session, user, active_section="estudiantes", editing_student=None)
         context.update({"error": "Nombre y apellidos son obligatorios para el alumno."})
-        return templates.TemplateResponse(request, "dashboard.html", context, status_code=status.HTTP_400_BAD_REQUEST)
+        return templates.TemplateResponse(request, "user_family.html", context, status_code=status.HTTP_400_BAD_REQUEST)
 
     if not comedor_enabled:
         comedor_days = ""
@@ -874,10 +994,10 @@ async def add_student(
 
     session.add(student)
     session.commit()
-    return RedirectResponse(url="/dashboard?section=estudiantes", status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url="/user_family?section=estudiantes", status_code=status.HTTP_302_FOUND)
 
 
-@app.post("/dashboard/student/{student_id}/edit")
+@app.post("/user_family/student/{student_id}/edit")
 async def edit_student(
     student_id: int,
     request: Request,
@@ -936,19 +1056,19 @@ async def edit_student(
             context.update({"error": "El curso del alumno es obligatorio."})
         else:
             context.update({"error": "Nombre y apellidos son obligatorios para el alumno."})
-        return templates.TemplateResponse(request, "dashboard.html", context, status_code=status.HTTP_400_BAD_REQUEST)
+        return templates.TemplateResponse(request, "user_family.html", context, status_code=status.HTTP_400_BAD_REQUEST)
 
     if comedor_enabled and not comedor_selected:
         editing_student = {"id": student_id, "first_name": first_name_clean, "last_name": last_name_clean, "course": course_clean, "comedor_days": comedor_days, "menu_type": menu_type, "allergies": normalized_allergies, "aula_matinal_days": aula_matinal_days, "aula_matinal_breakfast": aula_matinal_breakfast, "extras": normalized_extras, "excursion_authorized": excursion_authorized}
         context = _build_family_dashboard_context(session, user, active_section="estudiantes", editing_student=editing_student)
         context.update({"error": "Si activas el comedor, debe haber al menos un día seleccionado."})
-        return templates.TemplateResponse(request, "dashboard.html", context, status_code=status.HTTP_400_BAD_REQUEST)
+        return templates.TemplateResponse(request, "user_family.html", context, status_code=status.HTTP_400_BAD_REQUEST)
 
     if aula_matinal_enabled and not matinal_selected:
         editing_student = {"id": student_id, "first_name": first_name_clean, "last_name": last_name_clean, "course": course_clean, "comedor_days": comedor_days, "menu_type": menu_type, "allergies": normalized_allergies, "aula_matinal_days": aula_matinal_days, "aula_matinal_breakfast": aula_matinal_breakfast, "extras": normalized_extras, "excursion_authorized": excursion_authorized}
         context = _build_family_dashboard_context(session, user, active_section="estudiantes", editing_student=editing_student)
         context.update({"error": "Si activas el aula matinal, debe haber al menos un día seleccionado."})
-        return templates.TemplateResponse(request, "dashboard.html", context, status_code=status.HTTP_400_BAD_REQUEST)
+        return templates.TemplateResponse(request, "user_family.html", context, status_code=status.HTTP_400_BAD_REQUEST)
 
     normalized_comedor_days = comedor_days if comedor_enabled else ""
     normalized_matinal_days = aula_matinal_days if aula_matinal_enabled else ""
@@ -964,10 +1084,10 @@ async def edit_student(
     student.extras = normalized_extras
     student.excursion_authorized = excursion_authorized
     session.commit()
-    return RedirectResponse(url="/dashboard?section=estudiantes", status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url="/user_family?section=estudiantes", status_code=status.HTTP_302_FOUND)
 
 
-@app.post("/dashboard/student/{student_id}/delete")
+@app.post("/user_family/student/{student_id}/delete")
 async def delete_student(student_id: int, request: Request, session: Session = Depends(get_session)):
     user = await require_user(request, session)
     profile = _get_family_profile(session, user.id)
@@ -980,10 +1100,10 @@ async def delete_student(student_id: int, request: Request, session: Session = D
 
     session.delete(student)
     session.commit()
-    return RedirectResponse(url="/dashboard?section=estudiantes", status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url="/user_family?section=estudiantes", status_code=status.HTTP_302_FOUND)
 
 
-@app.post("/dashboard/contact")
+@app.post("/user_family/contact")
 async def add_contact(
     request: Request,
     session: Session = Depends(get_session),
@@ -1015,7 +1135,7 @@ async def add_contact(
         context.update({"error": "Nombre, apellidos, DNI/NIE y teléfono son obligatorios para el contacto."})
         context["contact_phone_prefix"] = phone_prefix
         context["contact_phone_number"] = phone_number.strip()
-        return templates.TemplateResponse(request, "dashboard.html", context, status_code=status.HTTP_400_BAD_REQUEST)
+        return templates.TemplateResponse(request, "user_family.html", context, status_code=status.HTTP_400_BAD_REQUEST)
 
     contact = TrustedContact(
         family_id=profile.id,
@@ -1026,10 +1146,10 @@ async def add_contact(
     )
     session.add(contact)
     session.commit()
-    return RedirectResponse(url="/dashboard?section=contactos", status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url="/user_family?section=contactos", status_code=status.HTTP_302_FOUND)
 
 
-@app.post("/dashboard/contact/{contact_id}/edit")
+@app.post("/user_family/contact/{contact_id}/edit")
 async def edit_contact(
     contact_id: int,
     request: Request,
@@ -1066,17 +1186,17 @@ async def edit_contact(
         context.update({"error": "Nombre, apellidos, DNI/NIE y teléfono son obligatorios para el contacto."})
         context["contact_phone_prefix"] = phone_prefix
         context["contact_phone_number"] = phone_number.strip()
-        return templates.TemplateResponse(request, "dashboard.html", context, status_code=status.HTTP_400_BAD_REQUEST)
+        return templates.TemplateResponse(request, "user_family.html", context, status_code=status.HTTP_400_BAD_REQUEST)
 
     contact.first_name = first_name_clean
     contact.last_name = last_name_clean
     contact.dni_nie = dni_nie_clean
     contact.phone = phone_clean
     session.commit()
-    return RedirectResponse(url="/dashboard?section=contactos", status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url="/user_family?section=contactos", status_code=status.HTTP_302_FOUND)
 
 
-@app.post("/dashboard/contact/{contact_id}/delete")
+@app.post("/user_family/contact/{contact_id}/delete")
 async def delete_contact(contact_id: int, request: Request, session: Session = Depends(get_session)):
     user = await require_user(request, session)
     profile = _get_family_profile(session, user.id)
@@ -1089,13 +1209,14 @@ async def delete_contact(contact_id: int, request: Request, session: Session = D
 
     session.delete(contact)
     session.commit()
-    return RedirectResponse(url="/dashboard?section=contactos", status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url="/user_family?section=contactos", status_code=status.HTTP_302_FOUND)
 
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_page(
     request: Request,
     session: Session = Depends(get_session),
+    section: str = "home",
     q: str | None = None,
     activity_status: str | None = None,
 ):
@@ -1105,9 +1226,13 @@ async def admin_page(
         return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
 
     if user.role != "admin":
-        return RedirectResponse(url="/dashboard", status_code=status.HTTP_302_FOUND)
+        return RedirectResponse(url="/user_family", status_code=status.HTTP_302_FOUND)
 
-    students = session.exec(select(Student)).all()
+    allowed_sections = {"home", "usuarios", "extraescolares", "estudiantes"}
+    active_section = section if section in allowed_sections else "home"
+
+    students_all = session.exec(select(Student)).all()
+    students = list(students_all)
     activities = session.exec(select(ExtracurricularActivity).order_by(ExtracurricularActivity.name.asc())).all()
     extra_price_map = {activity.name: activity.monthly_price for activity in activities if activity.is_active}
     if q:
@@ -1115,6 +1240,7 @@ async def admin_page(
         students = [s for s in students if q_l in f"{s.first_name} {s.last_name} {s.course}".lower()]
 
     total_students = len(students)
+    total_students_global = len(students_all)
     menu_counts = {"estandar": 0, "celiaco": 0, "vegetariano": 0}
     for student in students:
         menu_counts[student.menu_type] = menu_counts.get(student.menu_type, 0) + 1
@@ -1122,22 +1248,55 @@ async def admin_page(
     student_total_fn = _build_student_total_fn(extra_price_map)
 
     users = session.exec(select(User).order_by(User.email.asc())).all()
+    family_profiles = session.exec(select(FamilyProfile)).all()
+    profile_name_by_user_id = {profile.user_id: profile.parent_name for profile in family_profiles}
+    users_by_role: dict[str, list[dict]] = {"admin": [], "familia": [], "comedor": []}
+    for item in users:
+        if item.role not in users_by_role:
+            continue
+        users_by_role[item.role].append(
+            {
+                "id": item.id,
+                "display_name": _build_admin_user_display_name(
+                    item.role, item.email, profile_name_by_user_id.get(item.id or -1)
+                ),
+                "email": item.email,
+                "must_change_password": item.must_change_password,
+                "role": item.role,
+            }
+        )
+
+    family_users_total = sum(1 for item in users if item.role == "familia")
+    offered_extracurriculars_total = sum(1 for activity in activities if activity.is_active)
     user_status = request.query_params.get("user_status", "")
+    import_created = request.query_params.get("import_created", "0")
+    import_skipped = request.query_params.get("import_skipped", "0")
+    import_invalid = request.query_params.get("import_invalid", "0")
+    import_email_errors = request.query_params.get("import_email_errors", "0")
     return templates.TemplateResponse(
         request,
         "admin.html",
         {
             "user": user,
+            "active_section": active_section,
             "students": students,
             "query": q or "",
             "total_students": total_students,
+            "total_students_global": total_students_global,
             "menu_counts": menu_counts,
             "total_facturado": total_facturado,
             "student_total": student_total_fn,
             "activities": activities,
+            "family_users_total": family_users_total,
+            "offered_extracurriculars_total": offered_extracurriculars_total,
             "activity_status": activity_status or "",
             "users": users,
+            "users_by_role": users_by_role,
             "user_status": user_status,
+            "import_created": import_created,
+            "import_skipped": import_skipped,
+            "import_invalid": import_invalid,
+            "import_email_errors": import_email_errors,
         },
     )
 
@@ -1146,37 +1305,252 @@ async def admin_page(
 async def add_user(
     request: Request,
     session: Session = Depends(get_session),
+    role: Annotated[str, Form()] = "familia",
     email: Annotated[str, Form()] = "",
-    password: Annotated[str, Form()] = "",
-    password_confirm: Annotated[str, Form()] = "",
 ):
     user = await require_user(request, session)
     if user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
 
+    normalized_role = role.strip().lower()
+    if normalized_role == "admin":
+        return RedirectResponse(url="/admin?section=usuarios&user_status=cannot_create_admin", status_code=status.HTTP_302_FOUND)
+    if normalized_role not in {"familia", "comedor"}:
+        return RedirectResponse(url="/admin?section=usuarios&user_status=invalid_role", status_code=status.HTTP_302_FOUND)
+
     normalized_email = email.lower().strip()
     if not normalized_email:
-        return RedirectResponse(url="/admin?user_status=empty_email", status_code=status.HTTP_302_FOUND)
-    if len(password) < 8:
-        return RedirectResponse(url="/admin?user_status=weak_password", status_code=status.HTTP_302_FOUND)
-    if password != password_confirm:
-        return RedirectResponse(url="/admin?user_status=bad_match", status_code=status.HTTP_302_FOUND)
+        return RedirectResponse(url="/admin?section=usuarios&user_status=empty_email", status_code=status.HTTP_302_FOUND)
 
     existing = session.exec(select(User).where(User.email == normalized_email)).first()
     if existing:
-        return RedirectResponse(url="/admin?user_status=exists", status_code=status.HTTP_302_FOUND)
+        return RedirectResponse(url="/admin?section=usuarios&user_status=exists", status_code=status.HTTP_302_FOUND)
 
-    session.add(
-        User(
+    provisional_password = _generate_provisional_password()
+    created_user = User(
+        email=normalized_email,
+        hashed_password=hash_password(provisional_password),
+        role=normalized_role,
+        is_active=True,
+        must_change_password=True,
+    )
+    session.add(created_user)
+    session.commit()
+    try:
+        _send_provisional_password_email(normalized_email, provisional_password, normalized_role)
+    except (ValueError, smtplib.SMTPException, OSError):
+        try:
+            session.delete(created_user)
+            session.commit()
+        except SQLAlchemyError as cleanup_error:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"No se pudo enviar el email y tampoco revertir la creación del usuario: {cleanup_error}",
+            ) from cleanup_error
+        return RedirectResponse(url="/admin?section=usuarios&user_status=email_error", status_code=status.HTTP_302_FOUND)
+
+    return RedirectResponse(url="/admin?section=usuarios&user_status=created", status_code=status.HTTP_302_FOUND)
+
+
+@app.post("/admin/users/import")
+async def import_users_csv(
+    request: Request,
+    session: Session = Depends(get_session),
+    role: Annotated[str, Form()] = "familia",
+    send_email: Annotated[bool, Form()] = False,
+    csv_file: UploadFile = File(...),
+):
+    current_user = await require_user(request, session)
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+
+    normalized_role = role.strip().lower()
+    if normalized_role not in {"familia", "comedor"}:
+        return RedirectResponse(url="/admin?section=usuarios&user_status=invalid_role", status_code=status.HTTP_302_FOUND)
+
+    if not csv_file.filename:
+        return RedirectResponse(url="/admin?section=usuarios&user_status=import_empty_file", status_code=status.HTTP_302_FOUND)
+
+    raw_content = await csv_file.read()
+    if not raw_content.strip():
+        return RedirectResponse(url="/admin?section=usuarios&user_status=import_empty_file", status_code=status.HTTP_302_FOUND)
+    try:
+        decoded_content = raw_content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return RedirectResponse(url="/admin?section=usuarios&user_status=import_invalid_file", status_code=status.HTTP_302_FOUND)
+
+    emails = _extract_emails_from_csv_content(decoded_content)
+    if not emails:
+        return RedirectResponse(url="/admin?section=usuarios&user_status=import_no_emails", status_code=status.HTTP_302_FOUND)
+
+    created = 0
+    skipped = 0
+    invalid = 0
+    email_errors = 0
+    seen: set[str] = set()
+
+    for email in emails:
+        normalized_email = email.strip().lower()
+        if normalized_email in seen:
+            skipped += 1
+            continue
+        seen.add(normalized_email)
+
+        if not _is_valid_user_email(normalized_email):
+            invalid += 1
+            continue
+
+        existing = session.exec(select(User).where(User.email == normalized_email)).first()
+        if existing:
+            skipped += 1
+            continue
+
+        provisional_password = _generate_provisional_password()
+        created_user = User(
             email=normalized_email,
-            hashed_password=hash_password(password),
-            role="familia",
+            hashed_password=hash_password(provisional_password),
+            role=normalized_role,
             is_active=True,
             must_change_password=True,
         )
+        session.add(created_user)
+        session.commit()
+
+        if send_email:
+            try:
+                _send_provisional_password_email(normalized_email, provisional_password, normalized_role)
+            except (ValueError, smtplib.SMTPException, OSError):
+                try:
+                    session.delete(created_user)
+                    session.commit()
+                except SQLAlchemyError as cleanup_error:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"No se pudo enviar el email y tampoco revertir la creación del usuario: {cleanup_error}",
+                    ) from cleanup_error
+                email_errors += 1
+                continue
+
+        created += 1
+
+    status_code = "import_done"
+    query = urlencode(
+        {
+            "section": "usuarios",
+            "user_status": status_code,
+            "import_created": created,
+            "import_skipped": skipped,
+            "import_invalid": invalid,
+            "import_email_errors": email_errors,
+        }
     )
+    return RedirectResponse(url=f"/admin?{query}", status_code=status.HTTP_302_FOUND)
+
+
+@app.post("/admin/users/{user_id}/delete")
+async def delete_user(
+    user_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    current_user = await require_user(request, session)
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+
+    target_user = session.get(User, user_id)
+    if not target_user:
+        return RedirectResponse(url="/admin?section=usuarios&user_status=not_found", status_code=status.HTTP_302_FOUND)
+    if target_user.id == current_user.id:
+        return RedirectResponse(url="/admin?section=usuarios&user_status=cannot_delete_self", status_code=status.HTTP_302_FOUND)
+    if target_user.role == "admin":
+        return RedirectResponse(url="/admin?section=usuarios&user_status=cannot_delete_admin", status_code=status.HTTP_302_FOUND)
+
+    session.delete(target_user)
     session.commit()
-    return RedirectResponse(url="/admin?user_status=created", status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url="/admin?section=usuarios&user_status=deleted", status_code=status.HTTP_302_FOUND)
+
+
+@app.post("/admin/users/{user_id}/reset-password")
+async def reset_user_password(
+    user_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+    send_email: Annotated[bool, Form()] = True,
+):
+    current_user = await require_user(request, session)
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+
+    target_user = session.get(User, user_id)
+    if not target_user:
+        return RedirectResponse(url="/admin?section=usuarios&user_status=not_found", status_code=status.HTTP_302_FOUND)
+    if target_user.role == "admin":
+        return RedirectResponse(url="/admin?section=usuarios&user_status=cannot_reset_admin", status_code=status.HTTP_302_FOUND)
+
+    previous_hash = target_user.hashed_password
+    previous_change_required = target_user.must_change_password
+    provisional_password = _generate_provisional_password()
+    target_user.hashed_password = hash_password(provisional_password)
+    target_user.must_change_password = True
+    session.add(target_user)
+    session.commit()
+
+    if send_email:
+        try:
+            _send_provisional_password_email(target_user.email, provisional_password, target_user.role)
+        except (ValueError, smtplib.SMTPException, OSError):
+            try:
+                target_user.hashed_password = previous_hash
+                target_user.must_change_password = previous_change_required
+                session.add(target_user)
+                session.commit()
+            except SQLAlchemyError as rollback_error:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"No se pudo enviar el email ni restaurar la contraseña previa: {rollback_error}",
+                ) from rollback_error
+            return RedirectResponse(url="/admin?section=usuarios&user_status=reset_email_error", status_code=status.HTTP_302_FOUND)
+        return RedirectResponse(url="/admin?section=usuarios&user_status=reset_sent", status_code=status.HTTP_302_FOUND)
+
+    return RedirectResponse(url="/admin?section=usuarios&user_status=reset_done_no_email", status_code=status.HTTP_302_FOUND)
+
+
+@app.get("/admin/users/export")
+async def export_users_csv(
+    request: Request,
+    session: Session = Depends(get_session),
+    role: str = "familia",
+):
+    current_user = await require_user(request, session)
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+
+    target_role = role.strip().lower()
+    if target_role not in {"admin", "familia", "comedor"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rol no válido para exportación.")
+
+    users = session.exec(select(User).where(User.role == target_role).order_by(User.email.asc())).all()
+    family_profiles = session.exec(select(FamilyProfile)).all()
+    profile_name_by_user_id = {profile.user_id: profile.parent_name for profile in family_profiles}
+
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["nombre", "email", "actualizar_contrasena"])
+    for item in users:
+        writer.writerow(
+            [
+                _build_admin_user_display_name(target_role, item.email, profile_name_by_user_id.get(item.id or -1)),
+                item.email,
+                "Sí" if item.must_change_password else "No",
+            ]
+        )
+
+    filename = f"usuarios_{target_role}.csv"
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.post("/admin/activities")
@@ -1196,13 +1570,13 @@ async def add_activity(
     clean_name = name.strip()
     clean_schedule = schedule.strip()
     if not clean_name:
-        return RedirectResponse(url="/admin?activity_status=empty_name", status_code=status.HTTP_302_FOUND)
+        return RedirectResponse(url="/admin?section=extraescolares&activity_status=empty_name", status_code=status.HTTP_302_FOUND)
     if monthly_price < 0:
-        return RedirectResponse(url="/admin?activity_status=invalid_price", status_code=status.HTTP_302_FOUND)
+        return RedirectResponse(url="/admin?section=extraescolares&activity_status=invalid_price", status_code=status.HTTP_302_FOUND)
     if duration_hours <= 0:
-        return RedirectResponse(url="/admin?activity_status=invalid_duration", status_code=status.HTTP_302_FOUND)
+        return RedirectResponse(url="/admin?section=extraescolares&activity_status=invalid_duration", status_code=status.HTTP_302_FOUND)
     if not clean_schedule:
-        return RedirectResponse(url="/admin?activity_status=empty_schedule", status_code=status.HTTP_302_FOUND)
+        return RedirectResponse(url="/admin?section=extraescolares&activity_status=empty_schedule", status_code=status.HTTP_302_FOUND)
 
     existing = session.exec(select(ExtracurricularActivity).where(ExtracurricularActivity.name == clean_name)).first()
     if existing:
@@ -1212,7 +1586,7 @@ async def add_activity(
         existing.schedule = clean_schedule
         existing.is_active = True
         session.commit()
-        return RedirectResponse(url="/admin?activity_status=updated", status_code=status.HTTP_302_FOUND)
+        return RedirectResponse(url="/admin?section=extraescolares&activity_status=updated", status_code=status.HTTP_302_FOUND)
 
     session.add(
         ExtracurricularActivity(
@@ -1225,7 +1599,7 @@ async def add_activity(
         )
     )
     session.commit()
-    return RedirectResponse(url="/admin?activity_status=created", status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url="/admin?section=extraescolares&activity_status=created", status_code=status.HTTP_302_FOUND)
 
 
 @app.get("/admin/export-sepa")

@@ -6,15 +6,153 @@
     <title>Admin | ANPA</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/flowbite@2.3.0/dist/flowbite.min.js"></script>
+    <style>
+      .activity-btn {
+        position: relative;
+        color: #64748b;
+      }
+      .activity-btn::before {
+        content: "";
+        position: absolute;
+        left: -7px;
+        top: 50%;
+        width: 3px;
+        height: 24px;
+        border-radius: 9999px;
+        background: transparent;
+        transform: translateY(-50%);
+      }
+      .activity-btn-active {
+        background: #f1f5f9;
+        color: #0f172a;
+      }
+      .activity-btn-active::before {
+        background: #0f172a;
+      }
+      .activity-btn-inactive:hover {
+        background: #f8fafc;
+        color: #0f172a;
+      }
+      .nav-panel {
+        position: sticky;
+        top: 1rem;
+        width: 220px;
+        flex-shrink: 0;
+        border: 1px solid #e2e8f0;
+        background: #ffffff;
+        border-radius: 1rem;
+        box-shadow: 0 1px 3px rgb(15 23 42 / 0.08);
+        height: calc(100vh - 2rem);
+      }
+      .nav-panel-inner {
+        display: flex;
+        height: 100%;
+        flex-direction: column;
+        padding: 1rem 0.75rem;
+      }
+      .nav-brand {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.25rem 0.5rem 1rem;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .nav-brand-mark {
+        display: flex;
+        height: 2.5rem;
+        width: 2.5rem;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.8rem;
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
+        font-size: 0.65rem;
+        font-weight: 700;
+        letter-spacing: 0.2em;
+        color: #475569;
+      }
+      .nav-brand-text {
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
+        min-width: 0;
+      }
+      .nav-brand-label {
+        font-size: 0.65rem;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: #64748b;
+      }
+      .nav-brand-name {
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .nav-links {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        padding-top: 1rem;
+      }
+      .nav-link {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        width: 100%;
+        border-radius: 0.85rem;
+        padding: 0.7rem 0.85rem;
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: #475569;
+        transition: all 0.15s ease;
+      }
+      .nav-link svg {
+        width: 1.1rem;
+        height: 1.1rem;
+        flex-shrink: 0;
+      }
+      @media (max-width: 1023px) {
+        .nav-panel {
+          position: static;
+          width: 100%;
+          height: auto;
+        }
+        .nav-panel-inner {
+          padding: 0.75rem;
+        }
+        .nav-links {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+        .nav-link {
+          flex-direction: column;
+          justify-content: center;
+          text-align: center;
+          gap: 0.3rem;
+          padding: 0.75rem 0.5rem;
+          font-size: 0.75rem;
+        }
+        .nav-brand {
+          justify-content: center;
+        }
+        .nav-brand-text {
+          display: none;
+        }
+        .activity-btn::before {
+          display: none;
+        }
+      }
+    </style>
   </head>
   <body class="bg-slate-50 min-h-screen text-slate-900">
-    <div class="mx-auto max-w-7xl px-4 py-8">
-      <header class="mb-8 flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
+    <div class="mx-auto max-w-[1400px] px-4 py-6">
+      <header class="mb-6 flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
         <div>
           <p class="text-sm uppercase tracking-[0.2em] text-indigo-600">Administración</p>
           <h1 class="mt-2 text-3xl font-bold">Panel de gestión</h1>
         </div>
-        <div class="flex items-center gap-3">
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="max-w-full break-all rounded-2xl bg-slate-100 px-4 py-2 text-sm text-slate-600">{{ user.email }}</div>
           <a href="/admin/export-sepa" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Generar remesa SEPA</a>
           <form method="post" action="/logout">
             <button type="submit" class="rounded-xl border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">Cerrar sesión</button>
@@ -22,186 +160,413 @@
         </div>
       </header>
 
-      {% if user_status == 'created' %}
-      <div class="mb-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">Usuario creado correctamente. La contraseña provisional se ha asignado y deberá cambiarla al iniciar sesión.</div>
-      {% elif user_status == 'exists' %}
-      <div class="mb-8 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Ya existe un usuario con ese email.</div>
-      {% elif user_status == 'empty_email' %}
-      <div class="mb-8 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">El email es obligatorio.</div>
-      {% elif user_status == 'weak_password' %}
-      <div class="mb-8 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">La contraseña debe tener al menos 8 caracteres.</div>
-      {% elif user_status == 'bad_match' %}
-      <div class="mb-8 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Las contraseñas no coinciden.</div>
-      {% endif %}
-
-      <div class="mb-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div class="mb-4 flex items-center justify-between gap-3">
-          <h2 class="text-xl font-semibold">Crear usuarios</h2>
-        </div>
-
-        <form method="post" action="/admin/users" class="grid gap-3 md:grid-cols-3">
-          <div>
-            <label class="mb-2 block text-sm font-medium text-slate-700">Email</label>
-            <input name="email" type="email" required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="usuario@ejemplo.com" />
-          </div>
-          <div>
-            <label class="mb-2 block text-sm font-medium text-slate-700">Contraseña provisional</label>
-            <input name="password" type="password" required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Mínimo 8 caracteres" />
-          </div>
-          <div>
-            <label class="mb-2 block text-sm font-medium text-slate-700">Confirmar contraseña</label>
-            <input name="password_confirm" type="password" required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Repite la contraseña" />
-          </div>
-          <div class="md:col-span-3">
-            <button type="submit" class="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-500">Crear usuario</button>
-          </div>
-        </form>
-      </div>
-
-      <div class="mb-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div class="mb-4 flex items-center justify-between gap-3">
-          <h2 class="text-xl font-semibold">Usuarios registrados</h2>
-        </div>
-        <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-          {% for item in users %}
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-            <p class="font-semibold text-slate-900">{{ item.email }}</p>
-            <p class="mt-1">Rol: {{ item.role }}</p>
-            <p>Debe cambiar contraseña: {{ 'Sí' if item.must_change_password else 'No' }}</p>
-          </div>
-          {% else %}
-          <span class="text-sm text-slate-500">No hay usuarios creados todavía.</span>
-          {% endfor %}
-        </div>
-      </div>
-
-      <div class="mb-8 grid gap-4 md:grid-cols-4">
-        <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p class="text-sm text-slate-500">Total alumnos</p>
-          <p class="mt-3 text-3xl font-bold">{{ total_students }}</p>
-        </div>
-        <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p class="text-sm text-slate-500">Menú estándar</p>
-          <p class="mt-3 text-3xl font-bold">{{ menu_counts.get('estandar', 0) }}</p>
-        </div>
-        <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p class="text-sm text-slate-500">Menú celíaco</p>
-          <p class="mt-3 text-3xl font-bold">{{ menu_counts.get('celiaco', 0) }}</p>
-        </div>
-        <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <p class="text-sm text-slate-500">Total a facturar</p>
-          <p class="mt-3 text-3xl font-bold">{{ total_facturado }} €</p>
-        </div>
-      </div>
-
-      <div class="mb-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div class="mb-4 flex items-center justify-between gap-3">
-          <h2 class="text-xl font-semibold">Extraescolares</h2>
-          <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{{ activities|length }} actividad(es)</span>
-        </div>
-
-        {% if activity_status == 'created' %}
-        <div class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">Actividad creada correctamente.</div>
-        {% elif activity_status == 'updated' %}
-        <div class="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">La actividad ya existía y se han actualizado sus datos.</div>
-        {% elif activity_status == 'empty_name' %}
-        <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">El nombre de la actividad es obligatorio.</div>
-        {% elif activity_status == 'invalid_price' %}
-        <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">El precio no puede ser negativo.</div>
-        {% elif activity_status == 'invalid_duration' %}
-        <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">La duración debe ser mayor que 0 horas.</div>
-        {% elif activity_status == 'empty_schedule' %}
-        <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Debes indicar un horario para la actividad.</div>
-        {% endif %}
-
-        <form method="post" action="/admin/activities" class="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <div>
-            <label class="mb-2 block text-sm font-medium text-slate-700">Nombre de la actividad</label>
-            <input name="name" required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Ej. Teatro" />
-          </div>
-          <div>
-            <label class="mb-2 block text-sm font-medium text-slate-700">Precio mensual (€)</label>
-            <input name="monthly_price" type="number" min="0" step="0.01" value="0" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
-          </div>
-          <div>
-            <label class="mb-2 block text-sm font-medium text-slate-700">Duración</label>
-            <select name="duration_hours" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
-              <option value="1">1 hora</option>
-              <option value="1.5">1.5 horas</option>
-            </select>
-          </div>
-          <div>
-            <label class="mb-2 block text-sm font-medium text-slate-700">Horario</label>
-            <input name="schedule" value="Lunes 16:00" required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
-          </div>
-          <div class="xl:col-span-5 flex flex-wrap items-center gap-4">
-            <label class="inline-flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" name="material_required" class="rounded border-slate-300" />
-              <span>Requiere material extra</span>
-            </label>
-            <button type="submit" class="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">Añadir actividad</button>
-          </div>
-        </form>
-
-        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <p class="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Actividades disponibles para familias</p>
-          <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {% for activity in activities %}
-            <div class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700">
-              <p class="font-semibold text-slate-900">{{ activity.name }}</p>
-              <p class="mt-1">Precio: {{ '{:.2f}'.format(activity.monthly_price) }} € / mes</p>
-              <p>Duración: {{ '{:g}'.format(activity.duration_hours) }} h</p>
-              <p>Material extra: {{ 'Sí' if activity.material_required else 'No' }}</p>
-              <p>Horario: {{ activity.schedule }}</p>
+      <div class="flex flex-col items-stretch gap-4 lg:flex-row lg:gap-6">
+        <aside class="nav-panel">
+          <div class="nav-panel-inner">
+            <div class="nav-brand">
+              <div class="nav-brand-mark">AN</div>
+              <div class="nav-brand-text">
+                <span class="nav-brand-label">Admin</span>
+                <span class="nav-brand-name">ANPA</span>
+              </div>
             </div>
-            {% else %}
-            <span class="text-sm text-slate-500">No hay actividades registradas todavía.</span>
-            {% endfor %}
+
+            <nav class="nav-links">
+              <a href="/admin?section=home" class="nav-link activity-btn {% if active_section == 'home' %}activity-btn-active{% else %}activity-btn-inactive{% endif %}">
+                <span>Home</span>
+              </a>
+              <a href="/admin?section=usuarios" class="nav-link activity-btn {% if active_section == 'usuarios' %}activity-btn-active{% else %}activity-btn-inactive{% endif %}">
+                <span>Usuarios</span>
+              </a>
+              <a href="/admin?section=extraescolares" class="nav-link activity-btn {% if active_section == 'extraescolares' %}activity-btn-active{% else %}activity-btn-inactive{% endif %}">
+                <span>Extraescolares</span>
+              </a>
+              <a href="/admin?section=estudiantes" class="nav-link activity-btn {% if active_section == 'estudiantes' %}activity-btn-active{% else %}activity-btn-inactive{% endif %}">
+                <span>Estudiantes</span>
+              </a>
+            </nav>
           </div>
-        </div>
-      </div>
+        </aside>
 
-      <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div class="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <h2 class="text-xl font-semibold">Alumnos inscritos</h2>
-          <form method="get" class="flex w-full max-w-md gap-3">
-            <input name="q" value="{{ query }}" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Buscar alumno o curso" />
-            <button type="submit" class="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">Buscar</button>
-          </form>
-        </div>
+        <section class="min-w-0 flex-1 space-y-6 min-h-[70vh]">
+          {% if active_section == 'home' %}
+          <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 class="text-2xl font-semibold">Resumen</h2>
+            <p class="mt-3 text-sm text-slate-600">Vista rápida del estado general del sistema.</p>
+            <div class="mt-5 grid gap-4 md:grid-cols-4">
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs uppercase tracking-wide text-slate-500">Nombre de usuario admin</p>
+                <p class="mt-2 font-semibold">{{ user.email }}</p>
+              </div>
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs uppercase tracking-wide text-slate-500">Usuarios (familia)</p>
+                <p class="mt-2 font-semibold">{{ family_users_total }}</p>
+              </div>
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs uppercase tracking-wide text-slate-500">Estudiantes totales</p>
+                <p class="mt-2 font-semibold">{{ total_students_global }}</p>
+              </div>
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs uppercase tracking-wide text-slate-500">Extraescolares ofertadas</p>
+                <p class="mt-2 font-semibold">{{ offered_extracurriculars_total }}</p>
+              </div>
+            </div>
+          </div>
+          {% endif %}
 
-        <div class="overflow-x-auto">
-          <table class="min-w-full text-left text-sm text-slate-700">
-            <thead class="bg-slate-100 text-slate-600">
-              <tr>
-                <th class="px-4 py-3 font-semibold">Alumno</th>
-                <th class="px-4 py-3 font-semibold">Curso</th>
-                <th class="px-4 py-3 font-semibold">Menú</th>
-                <th class="px-4 py-3 font-semibold">Días comedor</th>
-                <th class="px-4 py-3 font-semibold">Extraescolares</th>
-                <th class="px-4 py-3 font-semibold">Cuota</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for student in students %}
-              <tr class="border-t border-slate-200">
-                <td class="px-4 py-3 font-medium text-slate-900">{{ student.first_name }} {{ student.last_name }}</td>
-                <td class="px-4 py-3">{{ student.course or '-' }}</td>
-                <td class="px-4 py-3">{{ student.menu_type }}</td>
-                <td class="px-4 py-3">{{ student.comedor_days or '-' }}</td>
-                <td class="px-4 py-3">{{ student.extras or '-' }}</td>
-                <td class="px-4 py-3 font-semibold text-indigo-700">{{ '{:.2f}'.format(student_total(student)) }} €</td>
-              </tr>
-              {% else %}
-              <tr>
-                <td colspan="6" class="px-4 py-8 text-center text-slate-500">No hay alumnos con los filtros actuales.</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+          {% if active_section == 'usuarios' %}
+          {% if user_status == 'created' %}
+          <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">Usuario creado correctamente. Se ha enviado un email con la contraseña provisional y deberá cambiarla al iniciar sesión.</div>
+          {% elif user_status == 'deleted' %}
+          <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">Usuario eliminado correctamente.</div>
+          {% elif user_status == 'exists' %}
+          <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Ya existe un usuario con ese email.</div>
+          {% elif user_status == 'empty_email' %}
+          <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">El email es obligatorio.</div>
+          {% elif user_status == 'weak_password' %}
+          <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">La contraseña debe tener al menos 8 caracteres.</div>
+          {% elif user_status == 'bad_match' %}
+          <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Las contraseñas no coinciden.</div>
+          {% elif user_status == 'cannot_create_admin' %}
+          <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">No se pueden crear más usuarios admin desde esta pantalla.</div>
+          {% elif user_status == 'invalid_role' %}
+          <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">El tipo de usuario solicitado no es válido.</div>
+          {% elif user_status == 'cannot_delete_admin' %}
+          <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">No se puede eliminar el usuario admin.</div>
+          {% elif user_status == 'cannot_delete_self' %}
+          <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">No puedes eliminar tu propio usuario.</div>
+          {% elif user_status == 'not_found' %}
+          <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">No se encontró el usuario a eliminar.</div>
+          {% elif user_status == 'email_error' %}
+          <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">No se pudo enviar el email con la contraseña provisional. El usuario no se ha creado.</div>
+          {% elif user_status == 'reset_sent' %}
+          <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">Contraseña restaurada y enviada por email correctamente.</div>
+          {% elif user_status == 'reset_done_no_email' %}
+          <div class="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">Contraseña restaurada sin envío de email. El usuario deberá solicitar o recibir la nueva clave por otro canal.</div>
+          {% elif user_status == 'reset_email_error' %}
+          <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">No se pudo enviar el email de restauración. Se ha mantenido la contraseña anterior.</div>
+          {% elif user_status == 'cannot_reset_admin' %}
+          <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">No se puede restaurar la contraseña del usuario admin desde esta pantalla.</div>
+          {% elif user_status == 'import_empty_file' %}
+          <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Debes seleccionar un CSV con emails.</div>
+          {% elif user_status == 'import_invalid_file' %}
+          <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">El archivo no es válido. Usa CSV UTF-8.</div>
+          {% elif user_status == 'import_no_emails' %}
+          <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">No se han detectado emails en el CSV.</div>
+          {% elif user_status == 'import_done' %}
+          <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            Importación completada. Creados: <strong>{{ import_created }}</strong>, omitidos (duplicados/existentes): <strong>{{ import_skipped }}</strong>, inválidos: <strong>{{ import_invalid }}</strong>, errores de email: <strong>{{ import_email_errors }}</strong>.
+          </div>
+          {% endif %}
+
+          <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 class="text-xl font-semibold">Usuarios por tipo</h2>
+            <p class="mt-2 text-sm text-slate-600">Puedes crear uno a uno o importar lotes desde CSV. En cada usuario puedes restaurar contraseña.</p>
+
+            <form method="post" action="/admin/users/import" enctype="multipart/form-data" class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <h3 class="text-sm font-semibold text-slate-900">Importar usuarios por CSV</h3>
+              <p class="mt-1 text-xs text-slate-600">Formato recomendado: columna <code>email</code> (o una lista simple, un email por línea).</p>
+              <div class="mt-3 grid gap-3 md:grid-cols-4">
+                <div>
+                  <label class="mb-2 block text-sm font-medium text-slate-700">Rol</label>
+                  <select name="role" class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                    <option value="familia">Familia</option>
+                    <option value="comedor">Comedor</option>
+                  </select>
+                </div>
+                <div class="md:col-span-2">
+                  <label class="mb-2 block text-sm font-medium text-slate-700">Archivo CSV</label>
+                  <input type="file" name="csv_file" accept=".csv,text/csv" required class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+                </div>
+                <div class="flex items-end">
+                  <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+                    <input type="checkbox" name="send_email" value="true" class="rounded border-slate-300" />
+                    <span>Enviar email al crear</span>
+                  </label>
+                </div>
+              </div>
+              <div class="mt-3">
+                <button type="submit" class="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">Importar CSV</button>
+              </div>
+            </form>
+
+            <div class="mt-5 space-y-4">
+              <details class="rounded-2xl border border-slate-200 bg-slate-50 p-4" open>
+                <summary class="cursor-pointer list-none">
+                  <div class="flex items-center justify-between gap-3">
+                    <h3 class="text-lg font-semibold text-slate-900">Admin</h3>
+                  </div>
+                </summary>
+                <div class="mt-4 overflow-x-auto">
+                  <table class="min-w-full text-left text-sm text-slate-700">
+                    <thead class="bg-slate-100 text-slate-600">
+                      <tr>
+                        <th class="px-3 py-2 font-semibold">Nombre</th>
+                        <th class="px-3 py-2 font-semibold">Email</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for item in users_by_role.admin %}
+                      <tr class="border-t border-slate-200">
+                        <td class="px-3 py-2">{{ item.display_name }}</td>
+                        <td class="px-3 py-2">{{ item.email }}</td>
+                      </tr>
+                      {% else %}
+                      <tr>
+                        <td colspan="2" class="px-3 py-4 text-center text-slate-500">No hay usuarios admin.</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+
+              <details class="rounded-2xl border border-slate-200 bg-slate-50 p-4" open>
+                <summary class="cursor-pointer list-none">
+                  <div class="flex items-center justify-between gap-3">
+                    <h3 class="text-lg font-semibold text-slate-900">Familia</h3>
+                    <div class="flex items-center gap-2">
+                      <a href="/admin/users/export?role=familia" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100">Descargar CSV</a>
+                    </div>
+                  </div>
+                </summary>
+                <form method="post" action="/admin/users" class="mt-4">
+                  <input type="hidden" name="role" value="familia" />
+                  <div class="max-w-md">
+                    <label class="mb-2 block text-sm font-medium text-slate-700">Email</label>
+                    <input name="email" type="email" required class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="familia@ejemplo.com" />
+                  </div>
+                  <div class="mt-4">
+                    <button type="submit" class="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-500">Crear usuario familia</button>
+                  </div>
+                </form>
+                <div class="mt-4 overflow-x-auto">
+                  <table class="min-w-full text-left text-sm text-slate-700">
+                    <thead class="bg-slate-100 text-slate-600">
+                      <tr>
+                        <th class="px-3 py-2 font-semibold">Nombre</th>
+                        <th class="px-3 py-2 font-semibold">Email</th>
+                        <th class="px-3 py-2 font-semibold">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for item in users_by_role.familia %}
+                      <tr class="border-t border-slate-200">
+                        <td class="px-3 py-2">{{ item.display_name }}</td>
+                        <td class="px-3 py-2">{{ item.email }}</td>
+                        <td class="px-3 py-2">
+                          <div class="flex flex-wrap items-center gap-2">
+                            <form method="post" action="/admin/users/{{ item.id }}/reset-password">
+                              <button type="submit" class="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100">Restaurar contraseña</button>
+                            </form>
+                            <form method="post" action="/admin/users/{{ item.id }}/delete" onsubmit="return confirm('¿Eliminar este usuario?');">
+                              <button type="submit" class="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100">Eliminar</button>
+                            </form>
+                          </div>
+                        </td>
+                      </tr>
+                      {% else %}
+                      <tr>
+                        <td colspan="3" class="px-3 py-4 text-center text-slate-500">No hay usuarios familia.</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+
+              <details class="rounded-2xl border border-slate-200 bg-slate-50 p-4" open>
+                <summary class="cursor-pointer list-none">
+                  <div class="flex items-center justify-between gap-3">
+                    <h3 class="text-lg font-semibold text-slate-900">Comedor</h3>
+                    <div class="flex items-center gap-2">
+                      <a href="/admin/users/export?role=comedor" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100">Descargar CSV</a>
+                    </div>
+                  </div>
+                </summary>
+                <form method="post" action="/admin/users" class="mt-4">
+                  <input type="hidden" name="role" value="comedor" />
+                  <div class="max-w-md">
+                    <label class="mb-2 block text-sm font-medium text-slate-700">Email</label>
+                    <input name="email" type="email" required class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="comedor@ejemplo.com" />
+                  </div>
+                  <div class="mt-4">
+                    <button type="submit" class="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-500">Crear usuario comedor</button>
+                  </div>
+                </form>
+                <div class="mt-4 overflow-x-auto">
+                  <table class="min-w-full text-left text-sm text-slate-700">
+                    <thead class="bg-slate-100 text-slate-600">
+                      <tr>
+                        <th class="px-3 py-2 font-semibold">Nombre</th>
+                        <th class="px-3 py-2 font-semibold">Email</th>
+                        <th class="px-3 py-2 font-semibold">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for item in users_by_role.comedor %}
+                      <tr class="border-t border-slate-200">
+                        <td class="px-3 py-2">{{ item.display_name }}</td>
+                        <td class="px-3 py-2">{{ item.email }}</td>
+                        <td class="px-3 py-2">
+                          <div class="flex flex-wrap items-center gap-2">
+                            <form method="post" action="/admin/users/{{ item.id }}/reset-password">
+                              <button type="submit" class="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100">Restaurar contraseña</button>
+                            </form>
+                            <form method="post" action="/admin/users/{{ item.id }}/delete" onsubmit="return confirm('¿Eliminar este usuario?');">
+                              <button type="submit" class="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100">Eliminar</button>
+                            </form>
+                          </div>
+                        </td>
+                      </tr>
+                      {% else %}
+                      <tr>
+                        <td colspan="3" class="px-3 py-4 text-center text-slate-500">No hay usuarios comedor.</td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </div>
+          </div>
+          {% endif %}
+
+          {% if active_section == 'extraescolares' %}
+          <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div class="mb-4 flex items-center justify-between gap-3">
+              <h2 class="text-xl font-semibold">Extraescolares</h2>
+              <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{{ offered_extracurriculars_total }} actividad(es) activa(s)</span>
+            </div>
+
+            {% if activity_status == 'created' %}
+            <div class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">Actividad creada correctamente.</div>
+            {% elif activity_status == 'updated' %}
+            <div class="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">La actividad ya existía y se han actualizado sus datos.</div>
+            {% elif activity_status == 'empty_name' %}
+            <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">El nombre de la actividad es obligatorio.</div>
+            {% elif activity_status == 'invalid_price' %}
+            <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">El precio no puede ser negativo.</div>
+            {% elif activity_status == 'invalid_duration' %}
+            <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">La duración debe ser mayor que 0 horas.</div>
+            {% elif activity_status == 'empty_schedule' %}
+            <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Debes indicar un horario para la actividad.</div>
+            {% endif %}
+
+            <form method="post" action="/admin/activities" class="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <div>
+                <label class="mb-2 block text-sm font-medium text-slate-700">Nombre de la actividad</label>
+                <input name="name" required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Ej. Teatro" />
+              </div>
+              <div>
+                <label class="mb-2 block text-sm font-medium text-slate-700">Precio mensual (€)</label>
+                <input name="monthly_price" type="number" min="0" step="0.01" value="0" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+              </div>
+              <div>
+                <label class="mb-2 block text-sm font-medium text-slate-700">Duración</label>
+                <select name="duration_hours" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                  <option value="1">1 hora</option>
+                  <option value="1.5">1.5 horas</option>
+                </select>
+              </div>
+              <div>
+                <label class="mb-2 block text-sm font-medium text-slate-700">Horario</label>
+                <input name="schedule" value="Lunes 16:00" required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+              </div>
+              <div class="xl:col-span-5 flex flex-wrap items-center gap-4">
+                <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" name="material_required" class="rounded border-slate-300" />
+                  <span>Requiere material extra</span>
+                </label>
+                <button type="submit" class="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">Añadir actividad</button>
+              </div>
+            </form>
+
+            <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p class="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Actividades disponibles para familias</p>
+              <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {% for activity in activities %}
+                <div class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700">
+                  <p class="font-semibold text-slate-900">{{ activity.name }}</p>
+                  <p class="mt-1">Precio: {{ '{:.2f}'.format(activity.monthly_price) }} € / mes</p>
+                  <p>Duración: {{ '{:g}'.format(activity.duration_hours) }} h</p>
+                  <p>Material extra: {{ 'Sí' if activity.material_required else 'No' }}</p>
+                  <p>Horario: {{ activity.schedule }}</p>
+                </div>
+                {% else %}
+                <span class="text-sm text-slate-500">No hay actividades registradas todavía.</span>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+          {% endif %}
+
+          {% if active_section == 'estudiantes' %}
+          <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div class="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <h2 class="text-xl font-semibold">Alumnos inscritos</h2>
+              <form method="get" class="flex w-full max-w-md gap-3">
+                <input type="hidden" name="section" value="estudiantes" />
+                <input name="q" value="{{ query }}" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Buscar alumno o curso" />
+                <button type="submit" class="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">Buscar</button>
+              </form>
+            </div>
+
+            <div class="mb-4 grid gap-4 md:grid-cols-4">
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs uppercase tracking-wide text-slate-500">Resultados</p>
+                <p class="mt-2 font-semibold">{{ total_students }}</p>
+              </div>
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs uppercase tracking-wide text-slate-500">Menú estándar</p>
+                <p class="mt-2 font-semibold">{{ menu_counts.get('estandar', 0) }}</p>
+              </div>
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs uppercase tracking-wide text-slate-500">Menú celíaco</p>
+                <p class="mt-2 font-semibold">{{ menu_counts.get('celiaco', 0) }}</p>
+              </div>
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs uppercase tracking-wide text-slate-500">Total a facturar</p>
+                <p class="mt-2 font-semibold">{{ total_facturado }} €</p>
+              </div>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-left text-sm text-slate-700">
+                <thead class="bg-slate-100 text-slate-600">
+                  <tr>
+                    <th class="px-4 py-3 font-semibold">Alumno</th>
+                    <th class="px-4 py-3 font-semibold">Curso</th>
+                    <th class="px-4 py-3 font-semibold">Menú</th>
+                    <th class="px-4 py-3 font-semibold">Días comedor</th>
+                    <th class="px-4 py-3 font-semibold">Extraescolares</th>
+                    <th class="px-4 py-3 font-semibold">Cuota</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for student in students %}
+                  <tr class="border-t border-slate-200">
+                    <td class="px-4 py-3 font-medium text-slate-900">{{ student.first_name }} {{ student.last_name }}</td>
+                    <td class="px-4 py-3">{{ student.course or '-' }}</td>
+                    <td class="px-4 py-3">{{ student.menu_type }}</td>
+                    <td class="px-4 py-3">{{ student.comedor_days or '-' }}</td>
+                    <td class="px-4 py-3">{{ student.extras or '-' }}</td>
+                    <td class="px-4 py-3 font-semibold text-indigo-700">{{ '{:.2f}'.format(student_total(student)) }} €</td>
+                  </tr>
+                  {% else %}
+                  <tr>
+                    <td colspan="6" class="px-4 py-8 text-center text-slate-500">No hay alumnos con los filtros actuales.</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {% endif %}
+
+          <div class="mt-6 text-center text-xs font-medium tracking-[0.2em] text-slate-400">ANPA COMEDOR · v{{ app_version }}</div>
+        </section>
       </div>
-      <div class="mt-6 text-center text-xs font-medium tracking-[0.2em] text-slate-400">ANPA COMEDOR · v{{ app_version }}</div>
     </div>
   </body>
 </html>

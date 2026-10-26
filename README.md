@@ -57,7 +57,20 @@ COOKIE_SECURE=true
 APP_PORT=8000
 APP_VERSION=latest
 ANPA_IMAGE=ghcr.io/ccouso/anpa
+
+# SMTP para envío de contraseñas provisionales
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USERNAME=notificaciones@example.com
+SMTP_PASSWORD=tu-password-smtp
+SMTP_FROM_EMAIL=notificaciones@example.com
+SMTP_FROM_NAME=ANPA Comedor
+SMTP_USE_TLS=true
+SMTP_USE_SSL=false
+APP_PUBLIC_URL=http://localhost:8000
 ```
+
+> Si no configuras SMTP, la creación de usuarios desde admin fallará porque el sistema exige enviar el email con la contraseña provisional autogenerada.
 
 ## Ejecutar localmente
 
