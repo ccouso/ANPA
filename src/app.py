@@ -40,6 +40,20 @@ APP_VERSION = (Path(__file__).resolve().parents[1] / "VERSION").read_text(encodi
 app = FastAPI(title="Comedor Escolar ANPA", version=APP_VERSION)
 
 WEEKDAY_SEQUENCE = [("L", "Lunes"), ("M", "Martes"), ("X", "Miércoles"), ("J", "Jueves"), ("V", "Viernes")]
+SCHOOL_MONTH_SEQUENCE = [
+    (9, "Septiembre"),
+    (10, "Octubre"),
+    (11, "Noviembre"),
+    (12, "Diciembre"),
+    (1, "Enero"),
+    (2, "Febrero"),
+    (3, "Marzo"),
+    (4, "Abril"),
+    (5, "Mayo"),
+    (6, "Junio"),
+    (7, "Julio"),
+    (8, "Agosto"),
+]
 EXTRA_DAY_MAP = {
     "lunes": "L",
     "martes": "M",
@@ -240,6 +254,81 @@ def _build_weekly_student_services(
     return weekly_services
 
 
+def _build_student_monthly_breakdown(student: Student, extra_price_map: dict[str, float]) -> dict[str, float | int]:
+    comedor_days_count = len(_selected_days(student.comedor_days))
+    comedor_multiplier = 1.35 if student.menu_type == "celiaco" else 1.00
+    comedor_cost = (comedor_days_count * 6.5 * comedor_multiplier) + (comedor_days_count * 0.75 if student.allergies else 0.0)
+
+    matinal_days_count = len(_selected_days(student.aula_matinal_days))
+    matinal_cost = matinal_days_count * 4.5
+    if student.aula_matinal_breakfast:
+        matinal_cost += matinal_days_count * 1.2
+
+    extras_selected = _normalize_list_items(student.extras)
+    activities_count = len(extras_selected)
+    activities_cost = sum(extra_price_map.get(activity, 0.0) for activity in extras_selected)
+
+    return {
+        "matinal_days": matinal_days_count,
+        "matinal_cost": round(matinal_cost, 2),
+        "comedor_days": comedor_days_count,
+        "comedor_cost": round(comedor_cost, 2),
+        "activities_count": activities_count,
+        "activities_cost": round(activities_cost, 2),
+        "total_cost": round(matinal_cost + comedor_cost + activities_cost, 2),
+    }
+
+
+def _build_school_payment_calendar(
+    students: list[Student], extra_price_map: dict[str, float], today: date | None = None
+) -> dict[str, str | list[dict]]:
+    today_date = today or date.today()
+    school_start_year = today_date.year if today_date.month >= 9 else today_date.year - 1
+    current_month_date = date(today_date.year, today_date.month, 1)
+    months: list[dict] = []
+
+    for month_number, month_name in SCHOOL_MONTH_SEQUENCE:
+        month_year = school_start_year if month_number >= 9 else school_start_year + 1
+        month_date = date(month_year, month_number, 1)
+        is_no_school = month_number in (7, 8)
+        is_past = month_date < current_month_date
+
+        student_summaries: list[dict] = []
+        month_total = 0.0
+        if not is_no_school:
+            for student in students:
+                summary = _build_student_monthly_breakdown(student, extra_price_map)
+                month_total += float(summary["total_cost"])
+                student_summaries.append({"student": student, "summary": summary})
+
+        if is_no_school:
+            status = "no_school"
+            status_label = "Sin actividad"
+        elif is_past:
+            status = "pending"
+            status_label = "Pendiente"
+        else:
+            status = "estimated"
+            status_label = "Estimado"
+
+        months.append(
+            {
+                "month_name": month_name,
+                "year": month_year,
+                "status": status,
+                "status_label": status_label,
+                "is_no_school": is_no_school,
+                "student_summaries": student_summaries,
+                "month_total": round(month_total, 2),
+            }
+        )
+
+    return {
+        "title": f"Calendario escolar {school_start_year}/{school_start_year + 1}",
+        "months": months,
+    }
+
+
 def _build_family_dashboard_context(
     session: Session,
     user: User,
@@ -279,6 +368,7 @@ def _build_family_dashboard_context(
         )
         notices = [notice for notice in session.exec(notice_statement).all() if notice.student_id in student_ids]
     weekly_student_services = _build_weekly_student_services(students, activities, notices, week_days)
+    school_payment_calendar = _build_school_payment_calendar(students, extra_price_map)
 
     profile_obj = profile_override if profile_override is not None else profile_db
     raw_phone = ""
@@ -304,6 +394,8 @@ def _build_family_dashboard_context(
         "food_intolerance_options": FOOD_INTOLERANCE_OPTIONS,
         "week_days": week_days,
         "weekly_student_services": weekly_student_services,
+        "school_payment_calendar_title": school_payment_calendar["title"],
+        "school_payment_calendar_months": school_payment_calendar["months"],
         "phone_prefix": phone_prefix,
         "phone_number": phone_number,
     }
@@ -479,7 +571,7 @@ async def dashboard_page(
     if user.role != "familia":
         return RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
 
-    allowed_sections = {"home", "perfil", "estudiantes", "contactos"}
+    allowed_sections = {"home", "perfil", "estudiantes", "contactos", "pagos"}
     active_section = section if section in allowed_sections else "home"
     attendance_status = request.query_params.get("attendance_status", "")
 
