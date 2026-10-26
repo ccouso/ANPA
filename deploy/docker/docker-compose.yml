@@ -4,11 +4,10 @@ services:
     pull_policy: always
     container_name: anpa-app
     restart: unless-stopped
-    env_file:
-      - ../../.env
     environment:
+      APP_SECRET: ${APP_SECRET:?APP_SECRET is required}
       DATABASE_URL: sqlite:////data/comedor.db
-      COOKIE_SECURE: "true"
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
       APP_VERSION: ${APP_VERSION:-latest}
     ports:
       - "${APP_PORT:-8000}:8000"
