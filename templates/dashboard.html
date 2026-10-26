@@ -585,7 +585,10 @@
               </a>
               <a href="/dashboard?section=estudiantes" data-activity-button data-section="estudiantes" data-url="/dashboard?section=estudiantes" class="nav-link activity-btn {% if active_section == 'estudiantes' %}activity-btn-active{% else %}activity-btn-inactive{% endif %}">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2m20 0v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M12 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" />
+                  <path d="M3 10.5V18a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7.5" />
+                  <path d="M12 3.5 3 8.5l9 5 9-5-9-5Z" />
+                  <path d="M12 13.5v8" />
+                  <path d="M9.5 16.5h5" />
                 </svg>
                 <span class="leading-tight">Estudiantes</span>
               </a>
@@ -600,8 +603,9 @@
               </a>
               <a href="/dashboard?section=pagos" data-activity-button data-section="pagos" data-url="/dashboard?section=pagos" class="nav-link activity-btn {% if active_section == 'pagos' %}activity-btn-active{% else %}activity-btn-inactive{% endif %}">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="3" y="4" width="18" height="16" rx="2" />
-                  <path d="M8 2v4M16 2v4M3 10h18" />
+                  <rect x="2" y="5" width="20" height="14" rx="2" />
+                  <path d="M2 10h20" />
+                  <path d="M7 15h3" />
                 </svg>
                 <span class="leading-tight">Pagos</span>
               </a>
@@ -632,7 +636,7 @@
           {% if active_section == 'home' %}
           <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <div class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-              <h2 class="text-2xl font-semibold">Resumen de tu inscripción</h2>
+              <h2 class="text-2xl font-semibold">Resumen</h2>
               {% if profile_saved %}
               <span class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">Registro completado</span>
               {% else %}
@@ -642,11 +646,14 @@
 
             {% if profile_saved %}
             <p class="mt-3 text-sm text-slate-600">Tu perfil está completo y estamos procesando la información de servicios de tus estudiantes.</p>
-            <div class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div class="mt-5 grid gap-4 md:grid-cols-4">
               <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs uppercase tracking-wide text-slate-500">Tutor</p><p class="mt-2 font-semibold">{{ profile.parent_name }}</p></div>
               <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs uppercase tracking-wide text-slate-500">Estudiantes</p><p class="mt-2 font-semibold">{{ students|length }}</p></div>
               <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs uppercase tracking-wide text-slate-500">Contactos</p><p class="mt-2 font-semibold">{{ contacts|length }}</p></div>
-              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs uppercase tracking-wide text-slate-500">Cuota del mes</p><p class="mt-2 font-semibold">{{ monthly_total|round(2) }} €</p></div>
+              <div class="rounded-2xl border border-violet-300 bg-violet-50 p-4 md:row-span-2"><p class="text-xs uppercase tracking-wide text-violet-700">Cuota del mes</p><p class="mt-2 text-xl font-bold text-violet-900">{{ monthly_total|round(2) }} €</p></div>
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs uppercase tracking-wide text-slate-500">Pagos</p><p class="mt-2 font-semibold {% if payments_status_label == 'pendiente' %}text-amber-700{% else %}text-emerald-700{% endif %}">{{ payments_status_label }}</p></div>
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs uppercase tracking-wide text-slate-500">Ahorro comedor mes</p><p class="mt-2 font-semibold">{{ monthly_skip_comedor_days }} días</p></div>
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs uppercase tracking-wide text-slate-500">Ahorro total</p><p class="mt-2 font-semibold">{{ total_skip_comedor_days }} días</p></div>
             </div>
             {% else %}
             <div class="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Completa tu perfil para finalizar el registro.</div>
@@ -666,6 +673,8 @@
             <div class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">Aviso guardado correctamente.</div>
             {% elif attendance_status == 'cleared' %}
             <div class="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">Se ha eliminado el aviso para ese día.</div>
+            {% elif attendance_status == 'comedor_not_available' %}
+            <div class="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">No se puede marcar comedor: solo está disponible para días contratados y hasta las 09:30 del día actual.</div>
             {% endif %}
 
             {% if students %}
@@ -723,13 +732,20 @@
                       {% endif %}
 
                       {% if day_data and day_data.comedor_contracted %}
-                      <label class="flex items-center gap-2 text-xs text-slate-700">
-                        <input type="checkbox" name="skip_comedor" {% if day_data.skip_comedor %}checked{% endif %} />
-                        <span>No asistirá a comedor</span>
-                      </label>
+                        {% if day_data.comedor_notice_available %}
+                        <label class="flex items-center gap-2 text-xs text-slate-700">
+                          <input type="checkbox" name="skip_comedor" {% if day_data.skip_comedor %}checked{% endif %} />
+                          <span>No asistirá a comedor</span>
+                        </label>
+                        {% else %}
+                        <label class="flex items-center gap-2 text-xs text-slate-400">
+                          <input type="checkbox" disabled {% if day_data.skip_comedor %}checked{% endif %} />
+                          <span>No asistirá a comedor (no disponible)</span>
+                        </label>
+                        {% endif %}
                       {% endif %}
 
-                      {% if (day_data and day_data.aula_matinal_contracted) or (day_data and day_data.comedor_contracted) %}
+                      {% if (day_data and day_data.aula_matinal_contracted) or (day_data and day_data.comedor_contracted and day_data.comedor_notice_available) %}
                       <button type="submit" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200">Guardar aviso</button>
                       {% else %}
                       <p class="text-[11px] text-slate-500">Sin servicios contratados para avisar.</p>
@@ -752,7 +768,7 @@
             <div class="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 class="text-2xl font-semibold">{{ school_payment_calendar_title }}</h2>
-                <p class="mt-1 text-sm text-slate-600">Vista de solo lectura con el resumen mensual de servicios contratados por estudiante.</p>
+                <p class="mt-1 text-sm text-slate-600">Resumen de pagos. La cuota será domiciliada entre el 1 y el 5 de cada mes. Si se hacen cambios después de la fecha tendrán efecto a mes vencido.</p>
               </div>
             </div>
 

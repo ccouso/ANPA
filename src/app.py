@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Annotated
 
@@ -62,6 +62,8 @@ EXTRA_DAY_MAP = {
     "jueves": "J",
     "viernes": "V",
 }
+WEEKDAY_INDEX_TO_LETTER = {0: "L", 1: "M", 2: "X", 3: "J", 4: "V"}
+COMEDOR_NOTICE_CUTOFF_TIME = time(9, 30)
 
 FOOD_INTOLERANCE_OPTIONS = [
     "Gluten",
@@ -184,6 +186,28 @@ def _selected_days(value: str) -> list[str]:
     return [day for day in ["L", "M", "X", "J", "V"] if day in value.upper().replace(" ", "")]
 
 
+def _weekday_letter_for_date(target_date: date) -> str | None:
+    return WEEKDAY_INDEX_TO_LETTER.get(target_date.weekday())
+
+
+def _is_comedor_day_contracted(student: Student, target_date: date) -> bool:
+    target_letter = _weekday_letter_for_date(target_date)
+    if not target_letter:
+        return False
+    return target_letter in set(_selected_days(student.comedor_days))
+
+
+def _is_comedor_notice_available_for_day(day_date: date, skip_comedor_already_marked: bool) -> bool:
+    if skip_comedor_already_marked:
+        return True
+    today = date.today()
+    if day_date < today:
+        return False
+    if day_date > today:
+        return True
+    return datetime.now().time() < COMEDOR_NOTICE_CUTOFF_TIME
+
+
 def _validate_password_change(password: str, password_confirm: str, current_hashed_password: str) -> str | None:
     if len(password) < 8:
         return "La contraseña debe tener al menos 8 caracteres."
@@ -238,15 +262,20 @@ def _build_weekly_student_services(
         for day in week_days:
             day_letter = day["letter"]
             day_iso = day["date_iso"]
+            day_date = day["date"]
             extras_for_day = [name for name in selected_extras if activity_day_by_name.get(name) == day_letter]
             notice = notice_map.get((student.id, day_iso))
+            skip_comedor = bool(notice and notice.skip_comedor)
+            comedor_contracted = day_letter in comedor_days
 
             student_days[day_iso] = {
-                "comedor_contracted": day_letter in comedor_days,
+                "comedor_contracted": comedor_contracted,
                 "aula_matinal_contracted": day_letter in matinal_days,
                 "extras": extras_for_day,
-                "skip_comedor": bool(notice and notice.skip_comedor),
+                "skip_comedor": skip_comedor,
                 "skip_aula_matinal": bool(notice and notice.skip_aula_matinal),
+                "comedor_notice_available": comedor_contracted
+                and _is_comedor_notice_available_for_day(day_date, skip_comedor),
             }
 
         weekly_services[student.id] = student_days
@@ -292,6 +321,7 @@ def _build_school_payment_calendar(
         month_date = date(month_year, month_number, 1)
         is_no_school = month_number in (7, 8)
         is_past = month_date < current_month_date
+        is_overdue_30_days = (today_date - month_date).days > 30 if is_past and not is_no_school else False
 
         student_summaries: list[dict] = []
         month_total = 0.0
@@ -315,9 +345,11 @@ def _build_school_payment_calendar(
             {
                 "month_name": month_name,
                 "year": month_year,
+                "month_date": month_date,
                 "status": status,
                 "status_label": status_label,
                 "is_no_school": is_no_school,
+                "is_overdue_30_days": is_overdue_30_days,
                 "student_summaries": student_summaries,
                 "month_total": round(month_total, 2),
             }
@@ -370,6 +402,38 @@ def _build_family_dashboard_context(
     weekly_student_services = _build_weekly_student_services(students, activities, notices, week_days)
     school_payment_calendar = _build_school_payment_calendar(students, extra_price_map)
 
+    monthly_skip_comedor_days = 0
+    total_skip_comedor_days = 0
+    payments_status_label = "al día"
+
+    if student_ids:
+        today = date.today()
+        month_start = date(today.year, today.month, 1)
+        next_month_start = date(today.year + (1 if today.month == 12 else 0), 1 if today.month == 12 else today.month + 1, 1)
+        student_map = {student.id: student for student in students if student.id is not None}
+        attendance_notices = session.exec(
+            select(StudentAttendanceNotice).where(StudentAttendanceNotice.student_id.in_(student_ids))
+        ).all()
+
+        valid_skip_comedor_notices = []
+        for notice in attendance_notices:
+            student = student_map.get(notice.student_id)
+            if not student or not notice.skip_comedor:
+                continue
+            if notice.notice_date >= today:
+                continue
+            if not _is_comedor_day_contracted(student, notice.notice_date):
+                continue
+            valid_skip_comedor_notices.append(notice)
+
+        monthly_skip_comedor_days = sum(
+            1 for notice in valid_skip_comedor_notices if month_start <= notice.notice_date < next_month_start
+        )
+        total_skip_comedor_days = len(valid_skip_comedor_notices)
+
+    if any(month.get("is_overdue_30_days") for month in school_payment_calendar["months"]):
+        payments_status_label = "pendiente"
+
     profile_obj = profile_override if profile_override is not None else profile_db
     raw_phone = ""
     if isinstance(profile_obj, dict):
@@ -396,6 +460,9 @@ def _build_family_dashboard_context(
         "weekly_student_services": weekly_student_services,
         "school_payment_calendar_title": school_payment_calendar["title"],
         "school_payment_calendar_months": school_payment_calendar["months"],
+        "payments_status_label": payments_status_label,
+        "monthly_skip_comedor_days": monthly_skip_comedor_days,
+        "total_skip_comedor_days": total_skip_comedor_days,
         "phone_prefix": phone_prefix,
         "phone_number": phone_number,
     }
@@ -686,6 +753,25 @@ async def save_attendance_notice(
         .where(StudentAttendanceNotice.student_id == student.id)
         .where(StudentAttendanceNotice.notice_date == notice_day)
     ).first()
+
+    if skip_comedor:
+        already_marked_comedor = bool(existing_notice and existing_notice.skip_comedor)
+        today = date.today()
+        if not _is_comedor_day_contracted(student, notice_day):
+            return RedirectResponse(
+                url="/dashboard?section=home&attendance_status=comedor_not_available",
+                status_code=status.HTTP_302_FOUND,
+            )
+        if notice_day < today and not already_marked_comedor:
+            return RedirectResponse(
+                url="/dashboard?section=home&attendance_status=comedor_not_available",
+                status_code=status.HTTP_302_FOUND,
+            )
+        if notice_day == today and datetime.now().time() >= COMEDOR_NOTICE_CUTOFF_TIME and not already_marked_comedor:
+            return RedirectResponse(
+                url="/dashboard?section=home&attendance_status=comedor_not_available",
+                status_code=status.HTTP_302_FOUND,
+            )
 
     if not skip_comedor and not skip_aula_matinal:
         if existing_notice:
