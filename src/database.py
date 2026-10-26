@@ -1,10 +1,16 @@
 import os
 from collections.abc import Generator
+from pathlib import Path
 from typing import Optional
 
 from sqlmodel import Field, Session, SQLModel, create_engine
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./comedor.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/comedor.db")
+
+if DATABASE_URL.startswith("sqlite:///./"):
+    local_db_path = Path(DATABASE_URL.replace("sqlite:///./", "", 1))
+    local_db_path.parent.mkdir(parents=True, exist_ok=True)
+
 engine = create_engine(DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
 
 
@@ -60,19 +66,26 @@ def create_db_and_tables() -> None:
 
 def ensure_database_compatibility() -> None:
     with engine.begin() as connection:
-        rows = connection.exec_driver_sql("PRAGMA table_info('extracurricularactivity')").fetchall()
-        columns = {row[1] for row in rows}
-        if "duration_hours" not in columns:
+        activity_rows = connection.exec_driver_sql("PRAGMA table_info('extracurricularactivity')").fetchall()
+        activity_columns = {row[1] for row in activity_rows}
+        if "duration_hours" not in activity_columns:
             connection.exec_driver_sql(
                 "ALTER TABLE extracurricularactivity ADD COLUMN duration_hours REAL NOT NULL DEFAULT 1.0"
             )
-        if "material_required" not in columns:
+        if "material_required" not in activity_columns:
             connection.exec_driver_sql(
                 "ALTER TABLE extracurricularactivity ADD COLUMN material_required INTEGER NOT NULL DEFAULT 0"
             )
-        if "schedule" not in columns:
+        if "schedule" not in activity_columns:
             connection.exec_driver_sql(
                 "ALTER TABLE extracurricularactivity ADD COLUMN schedule TEXT NOT NULL DEFAULT 'Lunes 16:00'"
+            )
+
+        user_rows = connection.exec_driver_sql("PRAGMA table_info('user')").fetchall()
+        user_columns = {row[1] for row in user_rows}
+        if "must_change_password" not in user_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE user ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"
             )
 
 

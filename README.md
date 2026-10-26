@@ -90,6 +90,8 @@ La base de datos SQLite se guarda en un volumen persistente `anpa_data` dentro d
 
 En local, la carpeta `data/` se usa como punto de almacenamiento del host para evitar que la DB quede mezclada con el código fuente.
 
+Si arrancas la app fuera de Docker (por ejemplo con `uvicorn`), SQLite también usa por defecto `./data/comedor.db`.
+
 ## Versionado y despliegue con Docker Compose
 
 El proyecto está preparado para trabajar con versiones de imagen y despliegues reproducibles.

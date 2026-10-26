@@ -236,6 +236,11 @@ async def login(
         )
 
     token = create_access_token(user.email, user.role)
+    if user.must_change_password:
+        redirect = RedirectResponse(url="/change-password", status_code=status.HTTP_302_FOUND)
+        set_auth_cookie(redirect, token)
+        return redirect
+
     target = "/admin" if user.role == "admin" else "/dashboard"
     redirect = RedirectResponse(url=target, status_code=status.HTTP_302_FOUND)
     set_auth_cookie(redirect, token)
@@ -252,8 +257,9 @@ async def logout():
 @app.get("/change-password", response_class=HTMLResponse)
 async def change_password_page(request: Request, session: Session = Depends(get_session)):
     user = await require_user(request, session)
-    if not user.must_change_password and user.role not in {"admin", "familia"}:
-        return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
+    if not user.must_change_password:
+        target = "/admin" if user.role == "admin" else "/dashboard"
+        return RedirectResponse(url=target, status_code=status.HTTP_302_FOUND)
     return templates.TemplateResponse(
         request,
         "login.html",

@@ -312,47 +312,14 @@
           });
         });
 
-        const sidebarPanel = document.getElementById('sidebarPanel');
         const activityButtons = Array.from(document.querySelectorAll('[data-activity-button]'));
         const activeSection = '{{ active_section }}';
-        const collapseStorageKey = 'dashboard-sidebar-collapsed';
 
-        if (sidebarPanel && activityButtons.length) {
-          const setButtonState = (collapsed) => {
-            activityButtons.forEach((button) => {
-              const isActive = !collapsed && button.dataset.section === activeSection;
-              button.classList.toggle('activity-btn-active', isActive);
-              button.classList.toggle('activity-btn-inactive', !isActive);
-            });
-          };
-
-          const persistedCollapsed = window.localStorage.getItem(collapseStorageKey) === '1';
-          if (persistedCollapsed) {
-            sidebarPanel.classList.add('sidebar-panel-collapsed');
-          }
-          setButtonState(sidebarPanel.classList.contains('sidebar-panel-collapsed'));
-
-          activityButtons.forEach((button) => {
-            button.addEventListener('click', () => {
-              const section = button.dataset.section;
-              const url = button.dataset.url;
-              const isCurrentSection = section === activeSection;
-
-              if (!url || !section) return;
-
-              if (isCurrentSection) {
-                sidebarPanel.classList.toggle('sidebar-panel-collapsed');
-                const collapsedNow = sidebarPanel.classList.contains('sidebar-panel-collapsed');
-                window.localStorage.setItem(collapseStorageKey, collapsedNow ? '1' : '0');
-                setButtonState(collapsedNow);
-                return;
-              }
-
-              window.localStorage.setItem(collapseStorageKey, '0');
-              window.location.href = url;
-            });
-          });
-        }
+        activityButtons.forEach((button) => {
+          const isActive = button.dataset.section === activeSection;
+          button.classList.toggle('activity-btn-active', isActive);
+          button.classList.toggle('activity-btn-inactive', !isActive);
+        });
 
         const addStudentModal = document.getElementById('addStudentModal');
         const openAddStudentButtons = Array.from(document.querySelectorAll('[data-open-student-modal]'));
@@ -416,19 +383,109 @@
         background: #f8fafc;
         color: #0f172a;
       }
-      .sidebar-panel {
-        width: 240px;
-        transition: width 0.2s ease-in-out, margin-left 0.2s ease-in-out, opacity 0.2s ease-in-out, padding 0.2s ease-in-out;
-        overflow: hidden;
-        white-space: nowrap;
+      .nav-panel {
+        position: sticky;
+        top: 1rem;
+        width: 220px;
+        flex-shrink: 0;
+        border: 1px solid #e2e8f0;
+        background: #ffffff;
+        border-radius: 1rem;
+        box-shadow: 0 1px 3px rgb(15 23 42 / 0.08);
+        height: calc(100vh - 2rem);
       }
-      .sidebar-panel.sidebar-panel-collapsed {
-        width: 0;
-        margin-left: -240px;
-        opacity: 0;
-        padding-left: 0;
-        padding-right: 0;
-        border-width: 0;
+      .nav-panel-inner {
+        display: flex;
+        height: 100%;
+        flex-direction: column;
+        padding: 1rem 0.75rem;
+      }
+      .nav-brand {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.25rem 0.5rem 1rem;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      .nav-brand-mark {
+        display: flex;
+        height: 2.5rem;
+        width: 2.5rem;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.8rem;
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
+        font-size: 0.65rem;
+        font-weight: 700;
+        letter-spacing: 0.2em;
+        color: #475569;
+      }
+      .nav-brand-text {
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
+        min-width: 0;
+      }
+      .nav-brand-label {
+        font-size: 0.65rem;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: #64748b;
+      }
+      .nav-brand-name {
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .nav-links {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        padding-top: 1rem;
+      }
+      .nav-link {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        width: 100%;
+        border-radius: 0.85rem;
+        padding: 0.7rem 0.85rem;
+        font-size: 0.92rem;
+        font-weight: 600;
+        color: #475569;
+        transition: all 0.15s ease;
+      }
+      .nav-link svg {
+        width: 1.1rem;
+        height: 1.1rem;
+        flex-shrink: 0;
+      }
+      .activity-btn {
+        position: relative;
+        color: #64748b;
+      }
+      .activity-btn::before {
+        content: "";
+        position: absolute;
+        left: -7px;
+        top: 50%;
+        width: 3px;
+        height: 24px;
+        border-radius: 9999px;
+        background: transparent;
+        transform: translateY(-50%);
+      }
+      .activity-btn-active {
+        background: #f1f5f9;
+        color: #0f172a;
+      }
+      .activity-btn-active::before {
+        background: #0f172a;
+      }
+      .activity-btn-inactive:hover {
+        background: #f8fafc;
+        color: #0f172a;
       }
       [data-student-card] {
         transition: all 0.2s ease;
@@ -438,10 +495,28 @@
         background: #f8fafc;
       }
       @media (max-width: 1023px) {
-        .sidebar-panel {
-          display: none;
+        .nav-panel {
+          position: static;
+          width: 100%;
+          height: auto;
         }
-        .activity-btn::before {
+        .nav-panel-inner {
+          padding: 0.75rem;
+        }
+        .nav-links {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        .nav-link {
+          justify-content: center;
+          text-align: center;
+          gap: 0.4rem;
+          padding: 0.75rem 0.5rem;
+        }
+        .nav-brand {
+          justify-content: center;
+        }
+        .nav-brand-text {
           display: none;
         }
       }
@@ -463,54 +538,45 @@
       </header>
 
       <div class="flex items-stretch gap-4 lg:gap-6">
-        <aside class="w-14 shrink-0 border border-slate-200 bg-white p-2 shadow-sm lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] lg:rounded-2xl">
-          <div class="flex h-full flex-col items-center justify-between gap-4">
-            <div class="flex w-full flex-col items-center gap-3">
-              <div class="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">AN</div>
-              <nav class="flex w-full flex-col items-center gap-1">
-                <button type="button" data-activity-button data-section="home" data-url="/dashboard?section=home" class="activity-btn {% if active_section == 'home' %}activity-btn-active{% else %}activity-btn-inactive{% endif %} flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-150" title="Home">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V10Z" />
-                  </svg>
-                </button>
-                <button type="button" data-activity-button data-section="perfil" data-url="/dashboard?section=perfil" class="activity-btn {% if active_section == 'perfil' %}activity-btn-active{% else %}activity-btn-inactive{% endif %} flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-150" title="Perfil">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M20 21a8 8 0 1 0-16 0m8-11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" />
-                  </svg>
-                </button>
-                <button type="button" data-activity-button data-section="estudiantes" data-url="/dashboard?section=estudiantes" class="activity-btn {% if active_section == 'estudiantes' %}activity-btn-active{% else %}activity-btn-inactive{% endif %} flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-150" title="Estudiantes">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2m20 0v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M12 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" />
-                  </svg>
-                </button>
-              </nav>
-            </div>
-            <div class="flex w-full flex-col items-center gap-2 pb-1">
-              <div class="h-2.5 w-2.5 rounded-full {% if profile_saved %}bg-emerald-500{% else %}bg-amber-500{% endif %}" title="{% if profile_saved %}Perfil completado{% else %}Perfil pendiente{% endif %}"></div>
-              <div class="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500" title="Estado">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 3a9 9 0 1 0 9 9m-9-6v6l4 2" />
-                </svg>
+        <aside class="nav-panel">
+          <div class="nav-panel-inner">
+            <div class="nav-brand">
+              <div class="nav-brand-mark">AN</div>
+              <div class="nav-brand-text">
+                <span class="nav-brand-label">Familia</span>
+                <span class="nav-brand-name">ANPA</span>
               </div>
             </div>
-          </div>
-        </aside>
-        <aside id="sidebarPanel" class="sidebar-panel hidden shrink-0 border border-slate-200 bg-white p-4 shadow-sm lg:sticky lg:top-4 lg:block lg:h-[calc(100vh-2rem)] lg:rounded-2xl">
-          <div class="flex h-full flex-col">
-            <div class="mb-4 border-b border-slate-200 pb-3">
-              <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Navegación</p>
-            </div>
-            <nav class="space-y-1 text-sm">
-              <a href="/dashboard?section=home" class="block rounded-lg px-3 py-2 font-medium {% if active_section == 'home' %}bg-slate-900 text-white{% else %}text-slate-700 hover:bg-slate-100{% endif %}">Home</a>
-              <a href="/dashboard?section=perfil" class="block rounded-lg px-3 py-2 font-medium {% if active_section == 'perfil' %}bg-slate-900 text-white{% else %}text-slate-700 hover:bg-slate-100{% endif %}">Perfil</a>
-              <a href="/dashboard?section=estudiantes" class="block rounded-lg px-3 py-2 font-medium {% if active_section == 'estudiantes' %}bg-slate-900 text-white{% else %}text-slate-700 hover:bg-slate-100{% endif %}">Estudiantes</a>
+
+            <nav class="nav-links">
+              <a href="/dashboard?section=home" data-activity-button data-section="home" data-url="/dashboard?section=home" class="nav-link activity-btn {% if active_section == 'home' %}activity-btn-active{% else %}activity-btn-inactive{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V10Z" />
+                </svg>
+                <span>Home</span>
+              </a>
+              <a href="/dashboard?section=perfil" data-activity-button data-section="perfil" data-url="/dashboard?section=perfil" class="nav-link activity-btn {% if active_section == 'perfil' %}activity-btn-active{% else %}activity-btn-inactive{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 21a8 8 0 1 0-16 0m8-11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" />
+                </svg>
+                <span>Perfil</span>
+              </a>
+              <a href="/dashboard?section=estudiantes" data-activity-button data-section="estudiantes" data-url="/dashboard?section=estudiantes" class="nav-link activity-btn {% if active_section == 'estudiantes' %}activity-btn-active{% else %}activity-btn-inactive{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2m20 0v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M12 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" />
+                </svg>
+                <span>Estudiantes</span>
+              </a>
             </nav>
-            <div class="mt-auto rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-              <p class="font-semibold uppercase tracking-[0.12em] text-slate-500">Estado del perfil</p>
-              <p class="mt-2 font-medium {% if profile_saved %}text-emerald-600{% else %}text-amber-600{% endif %}">
-                {% if profile_saved %}Completado{% else %}Pendiente{% endif %}
-              </p>
-              <p class="mt-1 text-slate-500">Pulsa el icono activo para colapsar o expandir este panel.</p>
+
+            <div class="mt-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+              <p class="font-semibold uppercase tracking-[0.12em] text-slate-500">Estado</p>
+              <div class="mt-2 flex items-center gap-2">
+                <span class="h-2.5 w-2.5 rounded-full {% if profile_saved %}bg-emerald-500{% else %}bg-amber-500{% endif %}"></span>
+                <span class="font-medium {% if profile_saved %}text-emerald-600{% else %}text-amber-600{% endif %}">
+                  {% if profile_saved %}Completado{% else %}Pendiente{% endif %}
+                </span>
+              </div>
             </div>
           </div>
         </aside>
