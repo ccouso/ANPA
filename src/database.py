@@ -51,6 +51,15 @@ class Student(SQLModel, table=True):
     excursion_authorized: bool = Field(default=False, nullable=False)
 
 
+class TrustedContact(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    family_id: int = Field(foreign_key="familyprofile.id", nullable=False, index=True)
+    first_name: str = Field(nullable=False)
+    last_name: str = Field(nullable=False)
+    dni_nie: str = Field(nullable=False)
+    phone: str = Field(nullable=False)
+
+
 class StudentAttendanceNotice(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("student_id", "notice_date", name="uq_student_notice_day"),)
 

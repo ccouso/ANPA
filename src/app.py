@@ -16,6 +16,7 @@ from .database import (
     FamilyProfile,
     Student,
     StudentAttendanceNotice,
+    TrustedContact,
     User,
     create_db_and_tables,
     engine,
@@ -35,7 +36,8 @@ from .security import (
 )
 
 templates = Jinja2Templates(directory="templates")
-app = FastAPI(title="Comedor Escolar ANPA", version="1.2.0")
+APP_VERSION = (Path(__file__).resolve().parents[1] / "VERSION").read_text(encoding="utf-8").strip() or "0.0.0"
+app = FastAPI(title="Comedor Escolar ANPA", version=APP_VERSION)
 
 WEEKDAY_SEQUENCE = [("L", "Lunes"), ("M", "Martes"), ("X", "Miércoles"), ("J", "Jueves"), ("V", "Viernes")]
 EXTRA_DAY_MAP = {
@@ -65,6 +67,12 @@ def _get_family_profile(session: Session, user_id: int) -> FamilyProfile | None:
 
 def _get_owned_student(session: Session, family_id: int, student_id: int) -> Student | None:
     return session.exec(select(Student).where(Student.id == student_id).where(Student.family_id == family_id)).first()
+
+
+def _get_owned_contact(session: Session, family_id: int, contact_id: int) -> TrustedContact | None:
+    return session.exec(
+        select(TrustedContact).where(TrustedContact.id == contact_id).where(TrustedContact.family_id == family_id)
+    ).first()
 
 
 def _get_active_extracurricular_activities(session: Session) -> list[ExtracurricularActivity]:
@@ -129,11 +137,17 @@ def _split_phone(value: str) -> tuple[str, str]:
         return "+34", ""
     for prefix in sorted(COUNTRY_PHONE_PREFIXES, key=len, reverse=True):
         if clean_value.startswith(prefix):
-            number = clean_value[len(prefix) :].strip()
+            number = clean_value[len(prefix):].strip()
             return prefix, number
     if clean_value.startswith("+"):
-        return clean_value[:4] if len(clean_value) > 4 else clean_value, clean_value[4:].strip()
+        prefix = clean_value[:4] if len(clean_value) > 4 else clean_value
+        number = clean_value[len(prefix):].strip()
+        return prefix, number
     return "+34", clean_value.replace(" ", "")
+
+
+templates.env.globals["app_version"] = APP_VERSION
+templates.env.globals["_split_phone"] = _split_phone
 
 
 def _validate_allergy_items(items: list[str]) -> str | None:
@@ -233,6 +247,7 @@ def _build_family_dashboard_context(
     active_section: str = "home",
     profile_edit_mode: bool = False,
     editing_student: Student | dict | None = None,
+    editing_contact: TrustedContact | dict | None = None,
 ) -> dict:
     profile_db = _get_family_profile(session, user.id)
     activities = _get_active_extracurricular_activities(session)
@@ -240,9 +255,15 @@ def _build_family_dashboard_context(
     student_total_fn = _build_student_total_fn(extra_price_map)
 
     students: list[Student] = []
+    contacts: list[TrustedContact] = []
     total = 0.0
     if profile_db:
         students = session.exec(select(Student).where(Student.family_id == profile_db.id)).all()
+        contacts = session.exec(
+            select(TrustedContact)
+            .where(TrustedContact.family_id == profile_db.id)
+            .order_by(TrustedContact.last_name.asc(), TrustedContact.first_name.asc())
+        ).all()
         total = round(sum(student_total_fn(student) for student in students), 2)
 
     week_days = _build_week_days()
@@ -275,6 +296,8 @@ def _build_family_dashboard_context(
         "active_section": active_section,
         "editing_student": editing_student,
         "students": students,
+        "contacts": contacts,
+        "editing_contact": editing_contact,
         "monthly_total": total,
         "student_total": student_total_fn,
         "extracurricular_activities": activities,
@@ -446,6 +469,7 @@ async def dashboard_page(
     section: str = "home",
     edit_profile: bool = False,
     edit_student_id: int | None = None,
+    edit_contact_id: int | None = None,
 ):
     try:
         user = await require_user(request, session)
@@ -455,15 +479,21 @@ async def dashboard_page(
     if user.role != "familia":
         return RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
 
-    allowed_sections = {"home", "perfil", "estudiantes"}
+    allowed_sections = {"home", "perfil", "estudiantes", "contactos"}
     active_section = section if section in allowed_sections else "home"
     attendance_status = request.query_params.get("attendance_status", "")
 
     editing_student: Student | None = None
+    editing_contact: TrustedContact | None = None
     if active_section == "estudiantes" and edit_student_id is not None:
         profile = _get_family_profile(session, user.id)
         if profile:
             editing_student = _get_owned_student(session, profile.id, edit_student_id)
+
+    if active_section == "contactos" and edit_contact_id is not None:
+        profile = _get_family_profile(session, user.id)
+        if profile:
+            editing_contact = _get_owned_contact(session, profile.id, edit_contact_id)
 
     context = _build_family_dashboard_context(
         session,
@@ -471,6 +501,7 @@ async def dashboard_page(
         active_section=active_section,
         profile_edit_mode=edit_profile,
         editing_student=editing_student,
+        editing_contact=editing_contact,
     )
     context["attendance_status"] = attendance_status
     return templates.TemplateResponse(request, "dashboard.html", context)
@@ -772,6 +803,115 @@ async def delete_student(student_id: int, request: Request, session: Session = D
     session.delete(student)
     session.commit()
     return RedirectResponse(url="/dashboard?section=estudiantes", status_code=status.HTTP_302_FOUND)
+
+
+@app.post("/dashboard/contact")
+async def add_contact(
+    request: Request,
+    session: Session = Depends(get_session),
+    first_name: Annotated[str, Form()] = "",
+    last_name: Annotated[str, Form()] = "",
+    dni_nie: Annotated[str, Form()] = "",
+    phone_prefix: Annotated[str, Form()] = "+34",
+    phone_number: Annotated[str, Form()] = "",
+):
+    user = await require_user(request, session)
+    profile = _get_family_profile(session, user.id)
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Primero completa tus datos de familia.")
+
+    first_name_clean = first_name.strip()
+    last_name_clean = last_name.strip()
+    dni_nie_clean = dni_nie.strip().upper()
+    phone_clean = f"{phone_prefix}{phone_number.strip()}" if phone_number.strip() else phone_prefix
+
+    if not first_name_clean or not last_name_clean or not dni_nie_clean or not phone_number.strip():
+        editing_contact = {
+            "id": None,
+            "first_name": first_name_clean,
+            "last_name": last_name_clean,
+            "dni_nie": dni_nie_clean,
+            "phone": phone_clean,
+        }
+        context = _build_family_dashboard_context(session, user, active_section="contactos", editing_contact=editing_contact)
+        context.update({"error": "Nombre, apellidos, DNI/NIE y teléfono son obligatorios para el contacto."})
+        context["contact_phone_prefix"] = phone_prefix
+        context["contact_phone_number"] = phone_number.strip()
+        return templates.TemplateResponse(request, "dashboard.html", context, status_code=status.HTTP_400_BAD_REQUEST)
+
+    contact = TrustedContact(
+        family_id=profile.id,
+        first_name=first_name_clean,
+        last_name=last_name_clean,
+        dni_nie=dni_nie_clean,
+        phone=phone_clean,
+    )
+    session.add(contact)
+    session.commit()
+    return RedirectResponse(url="/dashboard?section=contactos", status_code=status.HTTP_302_FOUND)
+
+
+@app.post("/dashboard/contact/{contact_id}/edit")
+async def edit_contact(
+    contact_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+    first_name: Annotated[str, Form()] = "",
+    last_name: Annotated[str, Form()] = "",
+    dni_nie: Annotated[str, Form()] = "",
+    phone_prefix: Annotated[str, Form()] = "+34",
+    phone_number: Annotated[str, Form()] = "",
+):
+    user = await require_user(request, session)
+    profile = _get_family_profile(session, user.id)
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Primero completa tus datos de familia.")
+
+    contact = _get_owned_contact(session, profile.id, contact_id)
+    if not contact:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contacto no encontrado.")
+
+    first_name_clean = first_name.strip()
+    last_name_clean = last_name.strip()
+    dni_nie_clean = dni_nie.strip().upper()
+    phone_clean = f"{phone_prefix}{phone_number.strip()}" if phone_number.strip() else phone_prefix
+
+    if not first_name_clean or not last_name_clean or not dni_nie_clean or not phone_number.strip():
+        editing_contact = {
+            "id": contact_id,
+            "first_name": first_name_clean,
+            "last_name": last_name_clean,
+            "dni_nie": dni_nie_clean,
+            "phone": phone_clean,
+        }
+        context = _build_family_dashboard_context(session, user, active_section="contactos", editing_contact=editing_contact)
+        context.update({"error": "Nombre, apellidos, DNI/NIE y teléfono son obligatorios para el contacto."})
+        context["contact_phone_prefix"] = phone_prefix
+        context["contact_phone_number"] = phone_number.strip()
+        return templates.TemplateResponse(request, "dashboard.html", context, status_code=status.HTTP_400_BAD_REQUEST)
+
+    contact.first_name = first_name_clean
+    contact.last_name = last_name_clean
+    contact.dni_nie = dni_nie_clean
+    contact.phone = phone_clean
+    session.commit()
+    return RedirectResponse(url="/dashboard?section=contactos", status_code=status.HTTP_302_FOUND)
+
+
+@app.post("/dashboard/contact/{contact_id}/delete")
+async def delete_contact(contact_id: int, request: Request, session: Session = Depends(get_session)):
+    user = await require_user(request, session)
+    profile = _get_family_profile(session, user.id)
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Primero completa tus datos de familia.")
+
+    contact = _get_owned_contact(session, profile.id, contact_id)
+    if not contact:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contacto no encontrado.")
+
+    session.delete(contact)
+    session.commit()
+    return RedirectResponse(url="/dashboard?section=contactos", status_code=status.HTTP_302_FOUND)
 
 
 @app.get("/admin", response_class=HTMLResponse)

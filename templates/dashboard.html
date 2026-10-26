@@ -295,6 +295,23 @@
        });
        computeEstimate();
 
+        document.querySelectorAll('[data-contact-card]').forEach((card) => {
+          const toggleBtn = card.querySelector('[data-toggle-contact]');
+          if (!toggleBtn) return;
+
+          toggleBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const isOpen = card.dataset.open === 'true';
+            card.dataset.open = String(!isOpen);
+            card.classList.toggle('ring-2', !isOpen);
+            card.classList.toggle('ring-slate-200', !isOpen);
+            const details = card.querySelector('[data-contact-details]');
+            if (details) {
+              details.classList.toggle('hidden', isOpen);
+            }
+          });
+        });
+
         document.querySelectorAll('[data-student-card]').forEach((card) => {
           const toggleBtn = card.querySelector('[data-toggle-student]');
           if (!toggleBtn) return;
@@ -505,7 +522,7 @@
         }
         .nav-links {
           display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
+          grid-template-columns: repeat(4, minmax(0, 1fr));
         }
         .nav-link {
           flex-direction: column;
@@ -572,6 +589,15 @@
                 </svg>
                 <span class="leading-tight">Estudiantes</span>
               </a>
+              <a href="/dashboard?section=contactos" data-activity-button data-section="contactos" data-url="/dashboard?section=contactos" class="nav-link activity-btn {% if active_section == 'contactos' %}activity-btn-active{% else %}activity-btn-inactive{% endif %}">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                  <path d="M17 11a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" />
+                  <path d="M7 21v-2a4 4 0 0 1 4-4h2a4 4 0 0 1 4 4v2" />
+                </svg>
+                <span class="leading-tight">Contactos</span>
+              </a>
             </nav>
 
             <div class="mt-auto rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
@@ -619,21 +645,6 @@
             <div class="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Completa tu perfil para finalizar el registro.</div>
             <a href="/dashboard?section=perfil" class="mt-4 inline-flex rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Completar perfil</a>
             {% endif %}
-          </div>
-
-          <div class="grid gap-6 xl:grid-cols-2">
-            <div class="rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-600 to-blue-600 p-6 text-white shadow-lg">
-              <p class="text-sm uppercase tracking-[0.2em] text-indigo-100">Cuota estimada</p>
-              <div class="mt-6 text-4xl font-bold" id="family-total">{{ monthly_total|round(2) }} €</div>
-            </div>
-            <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h3 class="text-lg font-semibold">Resumen de servicios</h3>
-              <ul class="mt-5 space-y-3 text-sm text-slate-600">
-                <li class="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2"><span>Alumnos</span><strong class="text-slate-900">{{ students|length }}</strong></li>
-                <li class="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2"><span>Comedor</span><strong class="text-slate-900">{{ (students|selectattr('comedor_days')|list)|length }}</strong></li>
-                <li class="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2"><span>Aula matinal</span><strong class="text-slate-900">{{ (students|selectattr('aula_matinal_days')|list)|length }}</strong></li>
-              </ul>
-            </div>
           </div>
 
           <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -1104,8 +1115,104 @@
           </div>
           {% endif %}
           {% endif %}
+
+          {% if active_section == 'contactos' %}
+          {% set is_editing_contact = editing_contact is not none %}
+          <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div class="mb-5 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+              <h2 class="text-xl font-semibold">Contactos autorizados</h2>
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">{{ contacts|length }} contacto(s)</span>
+                {% if profile_saved and not is_editing_contact %}
+                <a href="/dashboard?section=contactos&edit_contact_id=0" class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800">Añadir contacto</a>
+                {% endif %}
+              </div>
+            </div>
+
+            {% if not profile_saved %}
+            <div class="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Para añadir contactos primero debes completar tu perfil en la pestaña <strong>Perfil</strong>.</div>
+            {% endif %}
+
+            {% for contact in contacts %}
+            <div data-contact-card data-open="false" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <button type="button" data-toggle-contact class="w-full text-left">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p class="text-lg font-semibold">{{ contact.first_name }} {{ contact.last_name }}</p>
+                    <p class="text-sm text-slate-600">DNI/NIE: {{ contact.dni_nie }}</p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-semibold text-indigo-700">{{ contact.phone }}</span>
+                    <span class="rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Ver</span>
+                  </div>
+                </div>
+              </button>
+
+              <div data-contact-details class="hidden border-t border-slate-200 pt-4 mt-4">
+                <div class="grid gap-3 md:grid-cols-2 text-sm text-slate-700">
+                  <div class="rounded-xl border border-slate-200 bg-white px-3 py-2"><span class="block text-[10px] uppercase tracking-[0.12em] text-slate-500">Nombre</span><span class="mt-1 block font-medium">{{ contact.first_name }}</span></div>
+                  <div class="rounded-xl border border-slate-200 bg-white px-3 py-2"><span class="block text-[10px] uppercase tracking-[0.12em] text-slate-500">Apellidos</span><span class="mt-1 block font-medium">{{ contact.last_name }}</span></div>
+                  <div class="rounded-xl border border-slate-200 bg-white px-3 py-2"><span class="block text-[10px] uppercase tracking-[0.12em] text-slate-500">DNI/NIE</span><span class="mt-1 block font-medium">{{ contact.dni_nie }}</span></div>
+                  <div class="rounded-xl border border-slate-200 bg-white px-3 py-2"><span class="block text-[10px] uppercase tracking-[0.12em] text-slate-500">Teléfono móvil</span><span class="mt-1 block font-medium">{{ contact.phone }}</span></div>
+                </div>
+                {% if profile_saved %}
+                <div class="mt-4 flex flex-wrap gap-2">
+                  <a href="/dashboard?section=contactos&edit_contact_id={{ contact.id }}" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100">Editar</a>
+                  <form method="post" action="/dashboard/contact/{{ contact.id }}/delete" onsubmit="return confirm('¿Eliminar este contacto autorizado?');">
+                    <button type="submit" class="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100">Eliminar</button>
+                  </form>
+                </div>
+                {% endif %}
+              </div>
+            </div>
+            {% else %}
+            <div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500">No hay contactos autorizados todavía.</div>
+            {% endfor %}
+
+            {% if profile_saved and (is_editing_contact or request.query_params.get('edit_contact_id') == '0') %}
+            {% set contact_phone = editing_contact.phone if is_editing_contact else '' %}
+            {% set contact_phone_prefix, contact_phone_number = _split_phone(contact_phone) if contact_phone else (contact_phone_prefix or '+34', contact_phone_number or '') %}
+            <form method="post" action="{% if is_editing_contact and editing_contact.id %}/dashboard/contact/{{ editing_contact.id }}/edit{% else %}/dashboard/contact{% endif %}" class="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div class="mb-2 flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
+                <h3 class="text-lg font-semibold">{% if is_editing_contact and editing_contact.id %}Editar contacto{% else %}Añadir contacto{% endif %}</h3>
+                <a href="/dashboard?section=contactos" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100">Cancelar</a>
+              </div>
+              <div class="grid gap-4 md:grid-cols-2">
+                <div><label class="mb-2 block text-sm font-medium text-slate-700">Nombre</label><input name="first_name" value="{{ editing_contact.first_name if is_editing_contact else '' }}" required class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5" /></div>
+                <div><label class="mb-2 block text-sm font-medium text-slate-700">Apellidos</label><input name="last_name" value="{{ editing_contact.last_name if is_editing_contact else '' }}" required class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5" /></div>
+                <div><label class="mb-2 block text-sm font-medium text-slate-700">DNI/NIE</label><input name="dni_nie" value="{{ editing_contact.dni_nie if is_editing_contact else '' }}" required class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5" /></div>
+                <div>
+                  <label class="mb-2 block text-sm font-medium text-slate-700">Teléfono móvil</label>
+                  <div class="flex gap-2">
+                    <select name="phone_prefix" class="w-40 rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+                      <option value="+34" {% if (contact_phone_prefix or contact_phone_prefix == '+34') and contact_phone_prefix == '+34' %}selected{% endif %}>🇪🇸 +34</option>
+                      <option value="+1" {% if contact_phone_prefix == '+1' %}selected{% endif %}>🇺🇸 +1</option>
+                      <option value="+44" {% if contact_phone_prefix == '+44' %}selected{% endif %}>🇬🇧 +44</option>
+                      <option value="+33" {% if contact_phone_prefix == '+33' %}selected{% endif %}>🇫🇷 +33</option>
+                      <option value="+49" {% if contact_phone_prefix == '+49' %}selected{% endif %}>🇩🇪 +49</option>
+                      <option value="+351" {% if contact_phone_prefix == '+351' %}selected{% endif %}>🇵🇹 +351</option>
+                      <option value="+52" {% if contact_phone_prefix == '+52' %}selected{% endif %}>🇲🇽 +52</option>
+                      <option value="+54" {% if contact_phone_prefix == '+54' %}selected{% endif %}>🇦🇷 +54</option>
+                      <option value="+61" {% if contact_phone_prefix == '+61' %}selected{% endif %}>🇦🇺 +61</option>
+                      <option value="+65" {% if contact_phone_prefix == '+65' %}selected{% endif %}>🇸🇬 +65</option>
+                      <option value="+81" {% if contact_phone_prefix == '+81' %}selected{% endif %}>🇯🇵 +81</option>
+                      <option value="+971" {% if contact_phone_prefix == '+971' %}selected{% endif %}>🇦🇪 +971</option>
+                      <option value="+966" {% if contact_phone_prefix == '+966' %}selected{% endif %}>🇸🇦 +966</option>
+                    </select>
+                    <input name="phone_number" value="{{ contact_phone_number or '' }}" required class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5" placeholder="612345678" />
+                  </div>
+                </div>
+              </div>
+              <button type="submit" class="mt-4 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-500">{% if is_editing_contact and editing_contact.id %}Guardar cambios{% else %}Guardar contacto{% endif %}</button>
+            </form>
+            {% endif %}
+          </div>
+          {% endif %}
         </section>
       </div>
+    </div>
+    <div class="border-t border-slate-200 bg-white/80 px-4 py-3 text-center text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+      ANPA Comedor · v{{ app_version }}
     </div>
   </body>
 </html>
