@@ -16,7 +16,6 @@ Aplicación web para la gestión del comedor escolar de ANPA.
 │       └── docker-compose.yml
 ├── .env.example
 ├── .gitignore
-├── docker-compose.yml     # compatibilidad local / versión rápida
 ├── requirements.txt
 ├── main.py
 └── README.md
@@ -49,7 +48,7 @@ ANPA_IMAGE=ghcr.io/tu-usuario/anpa
 ## Ejecutar localmente
 
 ```bash
-docker compose up -d --build
+docker compose -f deploy/docker/docker-compose.yml up -d
 ```
 
 Abrir la app en:
@@ -61,7 +60,7 @@ http://localhost:8000/login
 Parar:
 
 ```bash
-docker compose down
+docker compose -f deploy/docker/docker-compose.yml down
 ```
 
 ## Persistencia de datos
@@ -77,19 +76,19 @@ El proyecto está preparado para trabajar con versiones de imagen y despliegues 
 ### Opción 1: usar la última imagen publicada
 
 ```bash
-APP_VERSION=latest docker compose up -d
+APP_VERSION=latest docker compose -f deploy/docker/docker-compose.yml up -d
 ```
 
 ### Opción 2: usar una versión concreta
 
 ```bash
-APP_VERSION=1.2.0 docker compose up -d
+APP_VERSION=1.2.0 docker compose -f deploy/docker/docker-compose.yml up -d
 ```
 
 ### Opción 3: usar una imagen de GHCR
 
 ```bash
-ANPA_IMAGE=ghcr.io/tu-usuario/anpa APP_VERSION=1.2.0 docker compose up -d
+ANPA_IMAGE=ghcr.io/tu-usuario/anpa APP_VERSION=1.2.0 docker compose -f deploy/docker/docker-compose.yml up -d
 ```
 
 ## Publicación automática de versiones
