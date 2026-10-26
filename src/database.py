@@ -14,6 +14,7 @@ class User(SQLModel, table=True):
     hashed_password: str = Field(nullable=False)
     role: str = Field(default="familia", nullable=False)
     is_active: bool = Field(default=True, nullable=False)
+    must_change_password: bool = Field(default=False, nullable=False)
 
 
 class FamilyProfile(SQLModel, table=True):

@@ -178,6 +178,10 @@ def _seed_default_extracurricular_activities(session: Session) -> None:
     session.commit()
 
 
+def _requires_initial_admin_setup(session: Session) -> bool:
+    return session.exec(select(User.id).limit(1)).first() is None
+
+
 @app.on_event("startup")
 def startup_event() -> None:
     create_db_and_tables()
@@ -191,8 +195,9 @@ async def root(_: Request):
 
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request):
-    return templates.TemplateResponse(request, "login.html", {})
+async def login_page(request: Request, session: Session = Depends(get_session)):
+    setup_required = _requires_initial_admin_setup(session)
+    return templates.TemplateResponse(request, "login.html", {"setup_required": setup_required})
 
 
 @app.post("/login")
@@ -203,6 +208,16 @@ async def login(
     password: Annotated[str, Form()] = "",
 ):
     normalized_email = email.lower().strip()
+    if _requires_initial_admin_setup(session):
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {
+                "error": "Debes crear el administrador inicial antes de iniciar sesión.",
+                "setup_required": True,
+            },
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
     user = session.exec(select(User).where(User.email == normalized_email)).first()
     if not user or not verify_password(password, user.hashed_password):
         return templates.TemplateResponse(
@@ -231,6 +246,51 @@ async def login(
 async def logout():
     redirect = RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
     clear_auth_cookie(redirect)
+    return redirect
+
+
+@app.get("/change-password", response_class=HTMLResponse)
+async def change_password_page(request: Request, session: Session = Depends(get_session)):
+    user = await require_user(request, session)
+    if not user.must_change_password and user.role not in {"admin", "familia"}:
+        return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
+    return templates.TemplateResponse(
+        request,
+        "login.html",
+        {"change_password_required": True, "user_email": user.email},
+    )
+
+
+@app.post("/change-password")
+async def change_password_submit(
+    request: Request,
+    session: Session = Depends(get_session),
+    password: Annotated[str, Form()] = "",
+    password_confirm: Annotated[str, Form()] = "",
+):
+    user = await require_user(request, session)
+    if len(password) < 8:
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {"change_password_required": True, "user_email": user.email, "error": "La contraseña debe tener al menos 8 caracteres."},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    if password != password_confirm:
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {"change_password_required": True, "user_email": user.email, "error": "Las contraseñas no coinciden."},
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    user.hashed_password = hash_password(password)
+    user.must_change_password = False
+    session.add(user)
+    session.commit()
+
+    target = "/admin" if user.role == "admin" else "/dashboard"
+    redirect = RedirectResponse(url=target, status_code=status.HTTP_302_FOUND)
     return redirect
 
 
@@ -541,6 +601,8 @@ async def admin_page(
     total_facturado = round(sum(calculate_student_total(student, extra_costs=extra_price_map) for student in students), 2)
     student_total_fn = _build_student_total_fn(extra_price_map)
 
+    users = session.exec(select(User).order_by(User.email.asc())).all()
+    user_status = request.query_params.get("user_status", "")
     return templates.TemplateResponse(
         request,
         "admin.html",
@@ -554,8 +616,47 @@ async def admin_page(
             "student_total": student_total_fn,
             "activities": activities,
             "activity_status": activity_status or "",
+            "users": users,
+            "user_status": user_status,
         },
     )
+
+
+@app.post("/admin/users")
+async def add_user(
+    request: Request,
+    session: Session = Depends(get_session),
+    email: Annotated[str, Form()] = "",
+    password: Annotated[str, Form()] = "",
+    password_confirm: Annotated[str, Form()] = "",
+):
+    user = await require_user(request, session)
+    if user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+
+    normalized_email = email.lower().strip()
+    if not normalized_email:
+        return RedirectResponse(url="/admin?user_status=empty_email", status_code=status.HTTP_302_FOUND)
+    if len(password) < 8:
+        return RedirectResponse(url="/admin?user_status=weak_password", status_code=status.HTTP_302_FOUND)
+    if password != password_confirm:
+        return RedirectResponse(url="/admin?user_status=bad_match", status_code=status.HTTP_302_FOUND)
+
+    existing = session.exec(select(User).where(User.email == normalized_email)).first()
+    if existing:
+        return RedirectResponse(url="/admin?user_status=exists", status_code=status.HTTP_302_FOUND)
+
+    session.add(
+        User(
+            email=normalized_email,
+            hashed_password=hash_password(password),
+            role="familia",
+            is_active=True,
+            must_change_password=True,
+        )
+    )
+    session.commit()
+    return RedirectResponse(url="/admin?user_status=created", status_code=status.HTTP_302_FOUND)
 
 
 @app.post("/admin/activities")
@@ -656,16 +757,85 @@ async def export_sepa(request: Request, session: Session = Depends(get_session))
     return FileResponse(target, media_type="application/xml", filename="remesa-sepa.xml")
 
 
+
+
+@app.post("/setup-admin")
+async def setup_admin(
+    request: Request,
+    session: Session = Depends(get_session),
+    email: Annotated[str, Form()] = "",
+    password: Annotated[str, Form()] = "",
+    password_confirm: Annotated[str, Form()] = "",
+):
+    if not _requires_initial_admin_setup(session):
+        return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
+
+    normalized_email = email.lower().strip()
+    if not normalized_email:
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {
+                "error": "El email del administrador es obligatorio.",
+                "setup_required": True,
+                "setup_email": normalized_email,
+            },
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if len(password) < 8:
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {
+                "error": "La contraseña debe tener al menos 8 caracteres.",
+                "setup_required": True,
+                "setup_email": normalized_email,
+            },
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if password != password_confirm:
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {
+                "error": "Las contraseñas no coinciden.",
+                "setup_required": True,
+                "setup_email": normalized_email,
+            },
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+
+    user = User(email=normalized_email, hashed_password=hash_password(password), role="admin", is_active=True)
+    session.add(user)
+    session.commit()
+
+    token = create_access_token(user.email, user.role)
+    redirect = RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
+    set_auth_cookie(redirect, token)
+    return redirect
+
+
 @app.post("/seed-admin")
 async def seed_admin(
     session: Session = Depends(get_session),
-    email: Annotated[str, Form()] = "admin@anpa.es",
-    password: Annotated[str, Form()] = "Admin1234!",
+    email: Annotated[str, Form()] = "",
+    password: Annotated[str, Form()] = "",
 ):
+    if not _requires_initial_admin_setup(session):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+
     normalized_email = email.lower().strip()
+    if not normalized_email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El email es obligatorio.")
+    if len(password) < 8:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La contraseña debe tener al menos 8 caracteres.")
+
     existing = session.exec(select(User).where(User.email == normalized_email)).first()
     if existing:
         return {"message": "El administrador ya existe."}
+
     user = User(email=normalized_email, hashed_password=hash_password(password), role="admin", is_active=True)
     session.add(user)
     session.commit()

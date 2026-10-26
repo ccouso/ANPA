@@ -77,6 +77,13 @@ Parar:
 docker compose -f deploy/docker/docker-compose.yml down
 ```
 
+## Configuración inicial de administrador
+
+En un despliegue nuevo (base de datos vacía), la aplicación bloquea el login normal y muestra un formulario para crear el primer usuario administrador.
+
+- Hasta crear ese usuario no se puede iniciar sesión.
+- El administrador se crea con el email/contraseña que introduzcas en esa pantalla inicial.
+
 ## Persistencia de datos
 
 La base de datos SQLite se guarda en un volumen persistente `anpa_data` dentro del contenedor en `/data/comedor.db`.

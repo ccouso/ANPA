@@ -13,7 +13,9 @@
         <div class="text-center mb-8">
           <div class="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600 text-2xl font-bold">A</div>
           <h1 class="mt-4 text-2xl font-bold text-slate-900">ANPA Comedor</h1>
-          <p class="mt-2 text-sm text-slate-500">Accede a tu área privada</p>
+          <p class="mt-2 text-sm text-slate-500">
+            {% if setup_required %}Configuración inicial{% elif change_password_required %}Cambio de contraseña{% else %}Accede a tu área privada{% endif %}
+          </p>
         </div>
 
         {% if error %}
@@ -22,6 +24,53 @@
         </div>
         {% endif %}
 
+        {% if setup_required %}
+        <div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          No existen usuarios todavía. Crea el administrador inicial para activar la aplicación.
+        </div>
+
+        <form method="post" action="/setup-admin" class="space-y-5">
+          <div>
+            <label for="setup_email" class="mb-2 block text-sm font-medium text-slate-700">Email administrador</label>
+            <input type="email" name="email" id="setup_email" value="{{ setup_email or '' }}" required class="block w-full rounded-xl border-slate-300 bg-slate-50 px-3.5 py-2.5 text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="admin@anpa.es" />
+          </div>
+
+          <div>
+            <label for="setup_password" class="mb-2 block text-sm font-medium text-slate-700">Contraseña</label>
+            <input type="password" name="password" id="setup_password" required class="block w-full rounded-xl border-slate-300 bg-slate-50 px-3.5 py-2.5 text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Mínimo 8 caracteres" />
+          </div>
+
+          <div>
+            <label for="setup_password_confirm" class="mb-2 block text-sm font-medium text-slate-700">Confirmar contraseña</label>
+            <input type="password" name="password_confirm" id="setup_password_confirm" required class="block w-full rounded-xl border-slate-300 bg-slate-50 px-3.5 py-2.5 text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Repite la contraseña" />
+          </div>
+
+          <button type="submit" class="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">Crear administrador inicial</button>
+        </form>
+        {% elif change_password_required %}
+        <div class="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          Es tu primer acceso. Debes cambiar la contraseña antes de continuar.
+        </div>
+
+        <form method="post" action="/change-password" class="space-y-5">
+          <div>
+            <label for="change_user_email" class="mb-2 block text-sm font-medium text-slate-700">Usuario</label>
+            <input type="text" id="change_user_email" value="{{ user_email or '' }}" disabled class="block w-full rounded-xl border-slate-300 bg-slate-100 px-3.5 py-2.5 text-slate-600" />
+          </div>
+
+          <div>
+            <label for="new_password" class="mb-2 block text-sm font-medium text-slate-700">Nueva contraseña</label>
+            <input type="password" name="password" id="new_password" required class="block w-full rounded-xl border-slate-300 bg-slate-50 px-3.5 py-2.5 text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Mínimo 8 caracteres" />
+          </div>
+
+          <div>
+            <label for="new_password_confirm" class="mb-2 block text-sm font-medium text-slate-700">Confirmar nueva contraseña</label>
+            <input type="password" name="password_confirm" id="new_password_confirm" required class="block w-full rounded-xl border-slate-300 bg-slate-50 px-3.5 py-2.5 text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Repite la nueva contraseña" />
+          </div>
+
+          <button type="submit" class="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">Guardar nueva contraseña</button>
+        </form>
+        {% else %}
         <form method="post" action="/login" class="space-y-5">
           <div>
             <label for="email" class="mb-2 block text-sm font-medium text-slate-700">Email</label>
@@ -35,10 +84,7 @@
 
           <button type="submit" class="w-full rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">Iniciar sesión</button>
         </form>
-
-        <div class="mt-6 rounded-xl bg-slate-100 px-4 py-3 text-xs text-slate-600">
-          Acceso demo para administrador: <span class="font-semibold">admin@anpa.es</span> / <span class="font-semibold">Admin1234!</span>
-        </div>
+        {% endif %}
       </div>
     </div>
   </body>

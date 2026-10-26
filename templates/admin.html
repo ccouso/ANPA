@@ -22,6 +22,59 @@
         </div>
       </header>
 
+      {% if user_status == 'created' %}
+      <div class="mb-8 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">Usuario creado correctamente. La contraseña provisional se ha asignado y deberá cambiarla al iniciar sesión.</div>
+      {% elif user_status == 'exists' %}
+      <div class="mb-8 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Ya existe un usuario con ese email.</div>
+      {% elif user_status == 'empty_email' %}
+      <div class="mb-8 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">El email es obligatorio.</div>
+      {% elif user_status == 'weak_password' %}
+      <div class="mb-8 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">La contraseña debe tener al menos 8 caracteres.</div>
+      {% elif user_status == 'bad_match' %}
+      <div class="mb-8 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Las contraseñas no coinciden.</div>
+      {% endif %}
+
+      <div class="mb-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <h2 class="text-xl font-semibold">Crear usuarios</h2>
+        </div>
+
+        <form method="post" action="/admin/users" class="grid gap-3 md:grid-cols-3">
+          <div>
+            <label class="mb-2 block text-sm font-medium text-slate-700">Email</label>
+            <input name="email" type="email" required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="usuario@ejemplo.com" />
+          </div>
+          <div>
+            <label class="mb-2 block text-sm font-medium text-slate-700">Contraseña provisional</label>
+            <input name="password" type="password" required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Mínimo 8 caracteres" />
+          </div>
+          <div>
+            <label class="mb-2 block text-sm font-medium text-slate-700">Confirmar contraseña</label>
+            <input name="password_confirm" type="password" required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Repite la contraseña" />
+          </div>
+          <div class="md:col-span-3">
+            <button type="submit" class="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-500">Crear usuario</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="mb-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <h2 class="text-xl font-semibold">Usuarios registrados</h2>
+        </div>
+        <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {% for item in users %}
+          <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            <p class="font-semibold text-slate-900">{{ item.email }}</p>
+            <p class="mt-1">Rol: {{ item.role }}</p>
+            <p>Debe cambiar contraseña: {{ 'Sí' if item.must_change_password else 'No' }}</p>
+          </div>
+          {% else %}
+          <span class="text-sm text-slate-500">No hay usuarios creados todavía.</span>
+          {% endfor %}
+        </div>
+      </div>
+
       <div class="mb-8 grid gap-4 md:grid-cols-4">
         <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <p class="text-sm text-slate-500">Total alumnos</p>
