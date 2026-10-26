@@ -1,0 +1,19 @@
+services:
+  anpa-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: anpa-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: sqlite:////data/comedor.db
+      COOKIE_SECURE: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - anpa_data:/data
+
+volumes:
+  anpa_data:

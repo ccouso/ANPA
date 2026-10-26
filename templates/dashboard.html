@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard familia</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flowbite@2.3.0/dist/flowbite.min.js"></script>
+    <script>
+      function collectDaySelection(card, name) {
+        const active = Array.from(card.querySelectorAll(`input[name="${name}"]:checked`)).map((el) => el.value);
+        const input = card.querySelector(`input[type="hidden"][name="${name}"]`);
+        if (input) input.value = active.join(',');
+      }
+
+      function parseCsvValues(value) {
+        return (value || '')
+          .split(',')
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0);
+      }
+
+      function getExtrasCatalog(card) {
+        const select = card.querySelector('[data-extra-select]');
+        if (!select) return {};
+        return Array.from(select.options).reduce((catalog, option) => {
+          catalog[option.value] = {
+            name: option.value,
+            price: Number(option.dataset.price || 0),
+            duration: option.dataset.duration || '1',
+            materialRequired: option.dataset.materialRequired === '1',
+            schedule: option.dataset.schedule || 'Lunes 16:00',
+          };
+          return catalog;
+        }, {});
+      }
+
+      function renderExtraInfo(card, extraName) {
+        const infoBox = card.querySelector('[data-extra-info]');
+        if (!infoBox) return;
+        const catalog = getExtrasCatalog(card);
+        const selected = extraName ? catalog[extraName] : null;
+        if (!selected) {
+          infoBox.classList.add('hidden');
+          return;
+        }
+        infoBox.classList.remove('hidden');
+        infoBox.querySelector('[data-extra-info-name]').textContent = selected.name;
+        infoBox.querySelector('[data-extra-info-price]').textContent = selected.price.toFixed(2) + ' € / mes';
+        infoBox.querySelector('[data-extra-info-duration]').textContent = selected.duration + ' h';
+        infoBox.querySelector('[data-extra-info-material]').textContent = selected.materialRequired ? 'Sí' : 'No';
+        infoBox.querySelector('[data-extra-info-schedule]').textContent = selected.schedule;
+      }
+
+      function renderExtraList(card) {
+        const hiddenInput = card.querySelector('input[type="hidden"][name="extras"]');
+        const list = card.querySelector('[data-extra-list]');
+        if (!hiddenInput || !list) return;
+
+        const selectedNames = parseCsvValues(hiddenInput.value);
+        list.innerHTML = '';
+
+        if (!selectedNames.length) {
+          const empty = document.createElement('p');
+          empty.className = 'text-xs text-slate-500';
+          empty.textContent = 'No hay actividades añadidas todavía.';
+          list.appendChild(empty);
+          return;
+        }
+
+        selectedNames.forEach((name) => {
+          const item = document.createElement('div');
+          item.className = 'inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700';
+          item.innerHTML = `<span>${name}</span><button type="button" data-remove-extra="${name}" class="text-slate-500 hover:text-red-600">×</button>`;
+          list.appendChild(item);
+        });
+      }
+
+      function addExtraToSelection(card) {
+        const picker = card.querySelector('[data-extra-select]');
+        const hiddenInput = card.querySelector('input[type="hidden"][name="extras"]');
+        if (!picker || !hiddenInput || !picker.value) return;
+
+        const selectedNames = parseCsvValues(hiddenInput.value);
+        if (!selectedNames.includes(picker.value)) {
+          selectedNames.push(picker.value);
+          hiddenInput.value = selectedNames.join(',');
+        }
+        renderExtraList(card);
+        computeEstimate();
+      }
+
+      function removeExtraFromSelection(card, extraName) {
+        const hiddenInput = card.querySelector('input[type="hidden"][name="extras"]');
+        if (!hiddenInput) return;
+        const selectedNames = parseCsvValues(hiddenInput.value).filter((item) => item !== extraName);
+        hiddenInput.value = selectedNames.join(',');
+        renderExtraList(card);
+        computeEstimate();
+      }
+
+      function bindExtraSelector(card) {
+        const picker = card.querySelector('[data-extra-select]');
+        const addButton = card.querySelector('[data-extra-add]');
+        const list = card.querySelector('[data-extra-list]');
+        const hiddenInput = card.querySelector('input[type="hidden"][name="extras"]');
+        if (!picker || !addButton || !list || !hiddenInput) return;
+
+        renderExtraInfo(card, picker.value);
+        renderExtraList(card);
+
+        picker.addEventListener('change', () => renderExtraInfo(card, picker.value));
+        addButton.addEventListener('click', () => addExtraToSelection(card));
+        list.addEventListener('click', (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          const extraName = target.getAttribute('data-remove-extra');
+          if (!extraName) return;
+          removeExtraFromSelection(card, extraName);
+        });
+      }
+
+      function syncServiceToggle(card, toggleName, daysGroupName) {
+        const toggle = card.querySelector(`input[name="${toggleName}"]`);
+        const group = card.querySelector(`[data-days-group="${daysGroupName}"]`);
+        const hidden = card.querySelector(`input[type="hidden"][name="${daysGroupName}"]`);
+        const dayInputs = group ? group.querySelectorAll('input[type="checkbox"]') : [];
+        if (!toggle || !group || !hidden) return;
+
+        const enabled = toggle.checked;
+        group.classList.toggle('opacity-50', !enabled);
+        dayInputs.forEach((input) => {
+          input.disabled = !enabled;
+          if (!enabled) input.checked = false;
+        });
+
+        if (!enabled) {
+          hidden.value = '';
+        } else {
+          collectDaySelection(card, daysGroupName);
+        }
+      }
+
+      function renderAllergyList(card) {
+        const hiddenInput = card.querySelector('input[type="hidden"][name="allergies"]');
+        const list = card.querySelector('[data-allergy-list]');
+        if (!hiddenInput || !list) return;
+
+        const selectedNames = parseCsvValues(hiddenInput.value);
+        list.innerHTML = '';
+
+        if (!selectedNames.length) {
+          const empty = document.createElement('p');
+          empty.className = 'text-xs text-slate-500';
+          empty.textContent = 'No hay intolerancias añadidas.';
+          list.appendChild(empty);
+          return;
+        }
+
+        selectedNames.forEach((name) => {
+          const item = document.createElement('div');
+          item.className = 'inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700';
+          item.innerHTML = `<span>${name}</span><button type="button" data-remove-allergy="${name}" class="text-slate-500 hover:text-red-600">×</button>`;
+          list.appendChild(item);
+        });
+      }
+
+      function bindAllergySelector(card) {
+        const picker = card.querySelector('[data-allergy-select]');
+        const addButton = card.querySelector('[data-allergy-add]');
+        const list = card.querySelector('[data-allergy-list]');
+        const hiddenInput = card.querySelector('input[type="hidden"][name="allergies"]');
+        const customWrapper = card.querySelector('[data-allergy-custom-wrapper]');
+        const customInput = card.querySelector('[data-allergy-custom]');
+        if (!picker || !addButton || !list || !hiddenInput || !customWrapper || !customInput) return;
+
+        const syncCustomVisibility = () => {
+          const showCustom = picker.value === '__other__';
+          customWrapper.classList.toggle('hidden', !showCustom);
+          if (!showCustom) {
+            customInput.value = '';
+            customInput.setCustomValidity('');
+          }
+        };
+
+        const addAllergy = () => {
+          let value = picker.value;
+          if (!value) return;
+          if (value === '__other__') {
+            const customValue = customInput.value.trim();
+            if (!customValue) {
+              customInput.setCustomValidity("Escribe una intolerancia personalizada.");
+              customInput.reportValidity();
+              return;
+            }
+            if (customValue.includes(',')) {
+              customInput.setCustomValidity("No uses comas en el texto personalizado.");
+              customInput.reportValidity();
+              return;
+            }
+            if (customValue.length > 100) {
+              customInput.setCustomValidity("Máximo 100 caracteres.");
+              customInput.reportValidity();
+              return;
+            }
+            customInput.setCustomValidity('');
+            value = `Otro: ${customValue}`;
+            customInput.value = '';
+          }
+          const selectedNames = parseCsvValues(hiddenInput.value);
+          if (!selectedNames.includes(value)) {
+            selectedNames.push(value);
+            hiddenInput.value = selectedNames.join(',');
+          }
+          renderAllergyList(card);
+          computeEstimate();
+        };
+
+        syncCustomVisibility();
+        renderAllergyList(card);
+
+        picker.addEventListener('change', syncCustomVisibility);
+        addButton.addEventListener('click', addAllergy);
+        list.addEventListener('click', (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          const allergyName = target.getAttribute('data-remove-allergy');
+          if (!allergyName) return;
+          const selectedNames = parseCsvValues(hiddenInput.value).filter((item) => item !== allergyName);
+          hiddenInput.value = selectedNames.join(',');
+          renderAllergyList(card);
+          computeEstimate();
+        });
+      }
+
+      function computeEstimate() {
+        const forms = Array.from(document.querySelectorAll('[data-student-form]'));
+        let total = 0;
+        forms.forEach((card) => {
+          const menuNode = card.querySelector('select[name="menu_type"]');
+          const allergiesNode = card.querySelector('input[name="allergies"]');
+          if (!menuNode || !allergiesNode) return;
+
+          collectDaySelection(card, 'comedor_days');
+          collectDaySelection(card, 'aula_matinal_days');
+          const days = card.querySelectorAll('input[name="comedor_days"]:checked').length;
+          const menu = menuNode.value;
+          const hasAllergies = allergiesNode.value.trim().length > 0;
+          const matinalDays = card.querySelectorAll('input[name="aula_matinal_days"]:checked').length;
+          const breakfast = card.querySelector('input[name="aula_matinal_breakfast"]').checked ? 1 : 0;
+
+          let subtotal = 0;
+          if (days) {
+            subtotal += days * 6.5 * (menu === 'celiaco' ? 1.35 : 1.0);
+            if (hasAllergies) subtotal += days * 0.75;
+          }
+          if (matinalDays) {
+            subtotal += matinalDays * 4.5;
+            subtotal += breakfast * matinalDays * 1.2;
+          }
+          const extrasMap = getExtrasCatalog(card);
+          const selectedExtras = parseCsvValues(card.querySelector('input[type="hidden"][name="extras"]')?.value || '');
+          subtotal += selectedExtras.reduce((acc, name) => acc + (extrasMap[name]?.price || 0), 0);
+          total += subtotal;
+        });
+
+        const totalNode = document.getElementById('family-total');
+        if (totalNode) totalNode.textContent = total.toFixed(2) + ' €';
+      }
+
+      document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('[data-student-form]').forEach((form) => {
+          bindExtraSelector(form);
+          bindAllergySelector(form);
+         syncServiceToggle(form, 'comedor_enabled', 'comedor_days');
+         syncServiceToggle(form, 'aula_matinal_enabled', 'aula_matinal_days');
+
+         form.querySelectorAll('input[name="comedor_enabled"], input[name="aula_matinal_enabled"]').forEach((toggle) => {
+           toggle.addEventListener('change', () => {
+             syncServiceToggle(form, 'comedor_enabled', 'comedor_days');
+             syncServiceToggle(form, 'aula_matinal_enabled', 'aula_matinal_days');
+             computeEstimate();
+           });
+         });
+
+         form.querySelectorAll('input[type="checkbox"], select, input[type="text"], input[type="email"]').forEach((field) => {
+           if (field.name === 'comedor_enabled' || field.name === 'aula_matinal_enabled') return;
+           field.addEventListener('change', () => {
+             collectDaySelection(form, 'comedor_days');
+             collectDaySelection(form, 'aula_matinal_days');
+             computeEstimate();
+           });
+           field.addEventListener('input', computeEstimate);
+         });
+       });
+       computeEstimate();
+
+        document.querySelectorAll('[data-student-card]').forEach((card) => {
+          const toggleBtn = card.querySelector('[data-toggle-student]');
+          if (!toggleBtn) return;
+
+          toggleBtn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const isOpen = card.dataset.open === 'true';
+            card.dataset.open = String(!isOpen);
+            card.classList.toggle('ring-2', !isOpen);
+            card.classList.toggle('ring-slate-200', !isOpen);
+            const details = card.querySelector('[data-student-details]');
+            if (details) {
+              details.classList.toggle('hidden', isOpen);
+            }
+          });
+        });
+
+        const sidebarPanel = document.getElementById('sidebarPanel');
+        const activityButtons = Array.from(document.querySelectorAll('[data-activity-button]'));
+        const activeSection = '{{ active_section }}';
+        const collapseStorageKey = 'dashboard-sidebar-collapsed';
+
+        if (sidebarPanel && activityButtons.length) {
+          const setButtonState = (collapsed) => {
+            activityButtons.forEach((button) => {
+              const isActive = !collapsed && button.dataset.section === activeSection;
+              button.classList.toggle('activity-btn-active', isActive);
+              button.classList.toggle('activity-btn-inactive', !isActive);
+            });
+          };
+
+          const persistedCollapsed = window.localStorage.getItem(collapseStorageKey) === '1';
+          if (persistedCollapsed) {
+            sidebarPanel.classList.add('sidebar-panel-collapsed');
+          }
+          setButtonState(sidebarPanel.classList.contains('sidebar-panel-collapsed'));
+
+          activityButtons.forEach((button) => {
+            button.addEventListener('click', () => {
+              const section = button.dataset.section;
+              const url = button.dataset.url;
+              const isCurrentSection = section === activeSection;
+
+              if (!url || !section) return;
+
+              if (isCurrentSection) {
+                sidebarPanel.classList.toggle('sidebar-panel-collapsed');
+                const collapsedNow = sidebarPanel.classList.contains('sidebar-panel-collapsed');
+                window.localStorage.setItem(collapseStorageKey, collapsedNow ? '1' : '0');
+                setButtonState(collapsedNow);
+                return;
+              }
+
+              window.localStorage.setItem(collapseStorageKey, '0');
+              window.location.href = url;
+            });
+          });
+        }
+
+        const addStudentModal = document.getElementById('addStudentModal');
+        const openAddStudentButtons = Array.from(document.querySelectorAll('[data-open-student-modal]'));
+        const closeAddStudentButtons = Array.from(document.querySelectorAll('[data-close-student-modal]'));
+
+        if (addStudentModal) {
+          const setModalOpen = (open) => {
+            addStudentModal.classList.toggle('hidden', !open);
+            document.body.classList.toggle('overflow-hidden', open);
+          };
+
+          openAddStudentButtons.forEach((button) => {
+            button.addEventListener('click', () => setModalOpen(true));
+          });
+          closeAddStudentButtons.forEach((button) => {
+            button.addEventListener('click', () => setModalOpen(false));
+          });
+
+          addStudentModal.addEventListener('click', (event) => {
+            if (event.target === addStudentModal) {
+              setModalOpen(false);
+            }
+          });
+
+          document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+              setModalOpen(false);
+            }
+          });
+
+          if (addStudentModal.dataset.openOnLoad === '1') {
+            setModalOpen(true);
+          }
+        }
+      });
+    </script>
+    <style>
+      .activity-btn {
+        position: relative;
+        color: #64748b;
+      }
+      .activity-btn::before {
+        content: "";
+        position: absolute;
+        left: -7px;
+        top: 50%;
+        width: 3px;
+        height: 24px;
+        border-radius: 9999px;
+        background: transparent;
+        transform: translateY(-50%);
+      }
+      .activity-btn-active {
+        background: #f1f5f9;
+        color: #0f172a;
+      }
+      .activity-btn-active::before {
+        background: #0f172a;
+      }
+      .activity-btn-inactive:hover {
+        background: #f8fafc;
+        color: #0f172a;
+      }
+      .sidebar-panel {
+        width: 240px;
+        transition: width 0.2s ease-in-out, margin-left 0.2s ease-in-out, opacity 0.2s ease-in-out, padding 0.2s ease-in-out;
+        overflow: hidden;
+        white-space: nowrap;
+      }
+      .sidebar-panel.sidebar-panel-collapsed {
+        width: 0;
+        margin-left: -240px;
+        opacity: 0;
+        padding-left: 0;
+        padding-right: 0;
+        border-width: 0;
+      }
+      [data-student-card] {
+        transition: all 0.2s ease;
+      }
+      [data-student-card][data-open="true"] {
+        border-color: #cbd5e1;
+        background: #f8fafc;
+      }
+      @media (max-width: 1023px) {
+        .sidebar-panel {
+          display: none;
+        }
+        .activity-btn::before {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body class="bg-slate-50 min-h-screen text-slate-900">
+    <div class="mx-auto max-w-[1400px] px-4 py-6">
+      <header class="mb-6 flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
+        <div>
+          <p class="text-sm uppercase tracking-[0.2em] text-indigo-600">Familia</p>
+          <h1 class="mt-2 text-3xl font-bold">Panel de servicios</h1>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="rounded-2xl bg-slate-100 px-4 py-2 text-sm text-slate-600">{{ user.email }}</div>
+          <form method="post" action="/logout">
+            <button type="submit" class="rounded-xl border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">Cerrar sesión</button>
+          </form>
+        </div>
+      </header>
+
+      <div class="flex items-stretch gap-4 lg:gap-6">
+        <aside class="w-14 shrink-0 border border-slate-200 bg-white p-2 shadow-sm lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] lg:rounded-2xl">
+          <div class="flex h-full flex-col items-center justify-between gap-4">
+            <div class="flex w-full flex-col items-center gap-3">
+              <div class="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">AN</div>
+              <nav class="flex w-full flex-col items-center gap-1">
+                <button type="button" data-activity-button data-section="home" data-url="/dashboard?section=home" class="activity-btn {% if active_section == 'home' %}activity-btn-active{% else %}activity-btn-inactive{% endif %} flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-150" title="Home">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V10Z" />
+                  </svg>
+                </button>
+                <button type="button" data-activity-button data-section="perfil" data-url="/dashboard?section=perfil" class="activity-btn {% if active_section == 'perfil' %}activity-btn-active{% else %}activity-btn-inactive{% endif %} flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-150" title="Perfil">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M20 21a8 8 0 1 0-16 0m8-11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" />
+                  </svg>
+                </button>
+                <button type="button" data-activity-button data-section="estudiantes" data-url="/dashboard?section=estudiantes" class="activity-btn {% if active_section == 'estudiantes' %}activity-btn-active{% else %}activity-btn-inactive{% endif %} flex h-10 w-10 items-center justify-center rounded-xl transition-all duration-150" title="Estudiantes">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2m20 0v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75M12 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" />
+                  </svg>
+                </button>
+              </nav>
+            </div>
+            <div class="flex w-full flex-col items-center gap-2 pb-1">
+              <div class="h-2.5 w-2.5 rounded-full {% if profile_saved %}bg-emerald-500{% else %}bg-amber-500{% endif %}" title="{% if profile_saved %}Perfil completado{% else %}Perfil pendiente{% endif %}"></div>
+              <div class="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-500" title="Estado">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 3a9 9 0 1 0 9 9m-9-6v6l4 2" />
+                </svg>
+              </div>
+            </div>
+          </div>
+        </aside>
+        <aside id="sidebarPanel" class="sidebar-panel hidden shrink-0 border border-slate-200 bg-white p-4 shadow-sm lg:sticky lg:top-4 lg:block lg:h-[calc(100vh-2rem)] lg:rounded-2xl">
+          <div class="flex h-full flex-col">
+            <div class="mb-4 border-b border-slate-200 pb-3">
+              <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Navegación</p>
+            </div>
+            <nav class="space-y-1 text-sm">
+              <a href="/dashboard?section=home" class="block rounded-lg px-3 py-2 font-medium {% if active_section == 'home' %}bg-slate-900 text-white{% else %}text-slate-700 hover:bg-slate-100{% endif %}">Home</a>
+              <a href="/dashboard?section=perfil" class="block rounded-lg px-3 py-2 font-medium {% if active_section == 'perfil' %}bg-slate-900 text-white{% else %}text-slate-700 hover:bg-slate-100{% endif %}">Perfil</a>
+              <a href="/dashboard?section=estudiantes" class="block rounded-lg px-3 py-2 font-medium {% if active_section == 'estudiantes' %}bg-slate-900 text-white{% else %}text-slate-700 hover:bg-slate-100{% endif %}">Estudiantes</a>
+            </nav>
+            <div class="mt-auto rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+              <p class="font-semibold uppercase tracking-[0.12em] text-slate-500">Estado del perfil</p>
+              <p class="mt-2 font-medium {% if profile_saved %}text-emerald-600{% else %}text-amber-600{% endif %}">
+                {% if profile_saved %}Completado{% else %}Pendiente{% endif %}
+              </p>
+              <p class="mt-1 text-slate-500">Pulsa el icono activo para colapsar o expandir este panel.</p>
+            </div>
+          </div>
+        </aside>
+
+        <section class="min-w-0 flex-1 space-y-6 min-h-[70vh]">
+          {% if error %}
+          <div class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <p class="font-semibold">{{ error }}</p>
+            {% if error_detail %}
+            <p class="mt-1">{{ error_detail }}</p>
+            {% endif %}
+          </div>
+          {% endif %}
+
+          {% if active_section == 'home' %}
+          <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div class="flex items-center justify-between gap-4">
+              <h2 class="text-2xl font-semibold">Resumen de tu inscripción</h2>
+              {% if profile_saved %}
+              <span class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">Registro completado</span>
+              {% else %}
+              <span class="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">Perfil pendiente</span>
+              {% endif %}
+            </div>
+
+            {% if profile_saved %}
+            <p class="mt-3 text-sm text-slate-600">Tu perfil está completo y estamos procesando la información de servicios de tus estudiantes.</p>
+            <div class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs uppercase tracking-wide text-slate-500">Tutor</p><p class="mt-2 font-semibold">{{ profile.parent_name }}</p></div>
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs uppercase tracking-wide text-slate-500">DNI/NIE</p><p class="mt-2 font-semibold">{{ profile.dni_nie }}</p></div>
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs uppercase tracking-wide text-slate-500">Alumnos</p><p class="mt-2 font-semibold">{{ students|length }}</p></div>
+              <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p class="text-xs uppercase tracking-wide text-slate-500">Cuota estimada</p><p class="mt-2 font-semibold">{{ monthly_total|round(2) }} €</p></div>
+            </div>
+            {% else %}
+            <div class="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Completa tu perfil para finalizar el registro.</div>
+            <a href="/dashboard?section=perfil" class="mt-4 inline-flex rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Completar perfil</a>
+            {% endif %}
+          </div>
+
+          <div class="grid gap-6 xl:grid-cols-2">
+            <div class="rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-600 to-blue-600 p-6 text-white shadow-lg">
+              <p class="text-sm uppercase tracking-[0.2em] text-indigo-100">Cuota estimada</p>
+              <div class="mt-6 text-4xl font-bold" id="family-total">{{ monthly_total|round(2) }} €</div>
+            </div>
+            <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 class="text-lg font-semibold">Resumen de servicios</h3>
+              <ul class="mt-5 space-y-3 text-sm text-slate-600">
+                <li class="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2"><span>Alumnos</span><strong class="text-slate-900">{{ students|length }}</strong></li>
+                <li class="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2"><span>Comedor</span><strong class="text-slate-900">{{ (students|selectattr('comedor_days')|list)|length }}</strong></li>
+                <li class="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2"><span>Aula matinal</span><strong class="text-slate-900">{{ (students|selectattr('aula_matinal_days')|list)|length }}</strong></li>
+              </ul>
+            </div>
+          </div>
+          {% endif %}
+
+          {% if active_section == 'perfil' %}
+          <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div class="mb-5 flex items-center justify-between gap-3">
+              <h2 class="text-xl font-semibold">Perfil del tutor</h2>
+              {% if profile_saved and not profile_edit_mode %}
+              <a href="/dashboard?section=perfil&edit_profile=1" class="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">Editar datos</a>
+              {% endif %}
+            </div>
+
+            {% if profile_saved and not profile_edit_mode %}
+            <dl class="grid gap-4 md:grid-cols-2">
+              <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"><dt class="text-xs uppercase tracking-wide text-slate-500">Nombre</dt><dd class="mt-1 font-medium">{{ profile.parent_name }}</dd></div>
+              <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"><dt class="text-xs uppercase tracking-wide text-slate-500">DNI/NIE</dt><dd class="mt-1 font-medium">{{ profile.dni_nie }}</dd></div>
+              <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"><dt class="text-xs uppercase tracking-wide text-slate-500">Teléfono</dt><dd class="mt-1 font-medium">{{ profile.phone }}</dd></div>
+              <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"><dt class="text-xs uppercase tracking-wide text-slate-500">Email</dt><dd class="mt-1 font-medium">{{ profile.email }}</dd></div>
+              <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 md:col-span-2"><dt class="text-xs uppercase tracking-wide text-slate-500">IBAN</dt><dd class="mt-1 font-medium">{{ profile.iban }}</dd></div>
+            </dl>
+            {% else %}
+            <form method="post" action="/dashboard/profile" class="grid gap-5 md:grid-cols-2">
+              <div class="md:col-span-2"><label class="mb-2 block text-sm font-medium text-slate-700">Nombre del tutor</label><input name="parent_name" value="{{ profile.parent_name if profile else '' }}" required class="w-full rounded-xl {% if form_errors and form_errors.parent_name %}border-red-300 bg-red-50{% else %}border-slate-300 bg-slate-50{% endif %} px-3.5 py-2.5" /></div>
+              <div><label class="mb-2 block text-sm font-medium text-slate-700">DNI/NIE</label><input name="dni_nie" value="{{ profile.dni_nie if profile else '' }}" required class="w-full rounded-xl {% if form_errors and form_errors.dni_nie %}border-red-300 bg-red-50{% else %}border-slate-300 bg-slate-50{% endif %} px-3.5 py-2.5" /></div>
+              <div><label class="mb-2 block text-sm font-medium text-slate-700">Teléfono</label><input name="phone" value="{{ profile.phone if profile else '' }}" required class="w-full rounded-xl {% if form_errors and form_errors.phone %}border-red-300 bg-red-50{% else %}border-slate-300 bg-slate-50{% endif %} px-3.5 py-2.5" /></div>
+              <div><label class="mb-2 block text-sm font-medium text-slate-700">Email</label><input type="email" name="email" value="{{ profile.email if profile else user.email }}" required class="w-full rounded-xl {% if form_errors and form_errors.email %}border-red-300 bg-red-50{% else %}border-slate-300 bg-slate-50{% endif %} px-3.5 py-2.5" /></div>
+              <div><label class="mb-2 block text-sm font-medium text-slate-700">IBAN</label><input name="iban" value="{{ profile.iban if profile else '' }}" required class="w-full rounded-xl {% if form_errors and form_errors.iban %}border-red-300 bg-red-50{% else %}border-slate-300 bg-slate-50{% endif %} px-3.5 py-2.5" /></div>
+              <div class="flex items-end"><label class="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm"><input type="checkbox" name="sepa_accepted" required {% if profile and profile.sepa_accepted %}checked{% endif %} /> <span>Acepto mandato SEPA</span></label></div>
+              <div class="md:col-span-2 flex gap-3"><button type="submit" class="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800">Guardar datos</button>{% if profile_saved %}<a href="/dashboard?section=perfil" class="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100">Cancelar</a>{% endif %}</div>
+            </form>
+            {% endif %}
+          </div>
+          {% endif %}
+
+          {% if active_section == 'estudiantes' %}
+          {% set is_editing_student = editing_student is not none %}
+          {% set comedor_selected = editing_student.comedor_days if is_editing_student else '' %}
+          {% set matinal_selected = editing_student.aula_matinal_days if is_editing_student else '' %}
+          {% set extras_selected = editing_student.extras if is_editing_student else '' %}
+          {% set extras_selected_list = extras_selected.split(',') if extras_selected else [] %}
+          {% set allergies_selected = editing_student.allergies if is_editing_student else '' %}
+          <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div class="mb-5 flex items-center justify-between gap-3">
+              <h2 class="text-xl font-semibold">Estudiantes</h2>
+              <div class="flex items-center gap-2">
+                <span class="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700">{{ students|length }} alumno(s)</span>
+                {% if profile_saved %}
+                <button type="button" data-open-student-modal class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800">Añadir estudiante</button>
+                {% endif %}
+              </div>
+            </div>
+
+            {% if not profile_saved %}
+            <div class="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Para añadir alumnos primero debes completar tu perfil en la pestaña <strong>Perfil</strong>.</div>
+            {% endif %}
+
+            {% for student in students %}
+            <div data-student-card data-open="false" class="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <button type="button" data-toggle-student class="w-full text-left">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p class="text-lg font-semibold">{{ student.first_name }} {{ student.last_name }}</p>
+                    <p class="text-sm text-slate-600">{{ student.course or '-' }} · {{ student.menu_type }}</p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-semibold text-indigo-700">{{ '{:.2f}'.format(student_total(student)) }} €</span>
+                    <span class="rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Ver</span>
+                  </div>
+                </div>
+              </button>
+
+              <div data-student-details class="hidden border-t border-slate-200 pt-4 mt-4">
+                <div class="grid gap-3 md:grid-cols-2 text-sm text-slate-700">
+                  <div class="rounded-xl border border-slate-200 bg-white px-3 py-2"><span class="block text-[10px] uppercase tracking-[0.12em] text-slate-500">Curso</span><span class="mt-1 block font-medium">{{ student.course or 'No indicado' }}</span></div>
+                  <div class="rounded-xl border border-slate-200 bg-white px-3 py-2"><span class="block text-[10px] uppercase tracking-[0.12em] text-slate-500">Tipo de menú</span><span class="mt-1 block font-medium">{{ student.menu_type }}</span></div>
+                  <div class="rounded-xl border border-slate-200 bg-white px-3 py-2"><span class="block text-[10px] uppercase tracking-[0.12em] text-slate-500">Días comedor</span><span class="mt-1 block font-medium">{{ student.comedor_days or 'No seleccionados' }}</span></div>
+                  <div class="rounded-xl border border-slate-200 bg-white px-3 py-2"><span class="block text-[10px] uppercase tracking-[0.12em] text-slate-500">Aula matinal</span><span class="mt-1 block font-medium">{{ student.aula_matinal_days or 'No seleccionados' }}</span></div>
+                  <div class="rounded-xl border border-slate-200 bg-white px-3 py-2"><span class="block text-[10px] uppercase tracking-[0.12em] text-slate-500">Desayuno</span><span class="mt-1 block font-medium">{{ 'Sí' if student.aula_matinal_breakfast else 'No' }}</span></div>
+                  <div class="rounded-xl border border-slate-200 bg-white px-3 py-2"><span class="block text-[10px] uppercase tracking-[0.12em] text-slate-500">Extraescolares</span><span class="mt-1 block font-medium">{{ student.extras or 'Ninguno' }}</span></div>
+                  <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 md:col-span-2"><span class="block text-[10px] uppercase tracking-[0.12em] text-slate-500">Alergias / intolerancias</span><span class="mt-1 block font-medium">{{ student.allergies|replace(',', ', ') if student.allergies else 'Ninguna' }}</span></div>
+                </div>
+
+                <div class="mt-4 flex flex-wrap items-center justify-end gap-2">
+                  <a href="/dashboard?section=estudiantes&edit_student_id={{ student.id }}" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100">Editar</a>
+                  <form method="post" action="/dashboard/student/{{ student.id }}/delete" onsubmit="return confirm('¿Seguro que quieres eliminar este estudiante?');">
+                    <button type="submit" class="rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50">Eliminar</button>
+                  </form>
+                </div>
+              </div>
+            </div>
+            {% else %}
+            <div class="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">Todavía no hay alumnos inscritos.</div>
+            {% endfor %}
+
+            {% if profile_saved and is_editing_student %}
+            <form method="post" action="/dashboard/student/{{ editing_student.id }}/edit" class="mt-6 space-y-5 rounded-2xl border border-slate-200 bg-slate-50 p-5" data-student-form>
+              <div class="mb-2 flex items-center justify-between">
+                <h3 class="text-lg font-semibold">Editar estudiante</h3>
+                <a href="/dashboard?section=estudiantes" class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100">Cancelar edición</a>
+              </div>
+
+              <div class="grid gap-4 md:grid-cols-2">
+                <div><label class="mb-2 block text-sm font-medium text-slate-700">Nombre</label><input name="first_name" value="{{ editing_student.first_name if is_editing_student else '' }}" required class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5" /></div>
+                <div><label class="mb-2 block text-sm font-medium text-slate-700">Apellidos</label><input name="last_name" value="{{ editing_student.last_name if is_editing_student else '' }}" required class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5" /></div>
+                <div>
+                  <label class="mb-2 block text-sm font-medium text-slate-700">Curso</label>
+                  <select name="course" required class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5">
+                    <option value="" {% if not is_editing_student or not editing_student.course %}selected{% endif %}>Selecciona un curso</option>
+                    <option value="4º Infantil" {% if is_editing_student and editing_student.course == '4º Infantil' %}selected{% endif %}>4º Infantil</option>
+                    <option value="5º Infantil" {% if is_editing_student and editing_student.course == '5º Infantil' %}selected{% endif %}>5º Infantil</option>
+                    <option value="6º Infantil" {% if is_editing_student and editing_student.course == '6º Infantil' %}selected{% endif %}>6º Infantil</option>
+                    <option value="1º Primaria" {% if is_editing_student and editing_student.course == '1º Primaria' %}selected{% endif %}>1º Primaria</option>
+                    <option value="2º Primaria" {% if is_editing_student and editing_student.course == '2º Primaria' %}selected{% endif %}>2º Primaria</option>
+                    <option value="3º Primaria" {% if is_editing_student and editing_student.course == '3º Primaria' %}selected{% endif %}>3º Primaria</option>
+                    <option value="4º Primaria" {% if is_editing_student and editing_student.course == '4º Primaria' %}selected{% endif %}>4º Primaria</option>
+                    <option value="5º Primaria" {% if is_editing_student and editing_student.course == '5º Primaria' %}selected{% endif %}>5º Primaria</option>
+                    <option value="6º Primaria" {% if is_editing_student and editing_student.course == '6º Primaria' %}selected{% endif %}>6º Primaria</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="mb-2 block text-sm font-medium text-slate-700">Tipo de menú</label>
+                  <select name="menu_type" class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5">
+                    <option value="estandar" {% if is_editing_student and editing_student.menu_type == 'estandar' %}selected{% endif %}>Estándar</option>
+                    <option value="celiaco" {% if is_editing_student and editing_student.menu_type == 'celiaco' %}selected{% endif %}>Celíaco</option>
+                    <option value="vegetariano" {% if is_editing_student and editing_student.menu_type == 'vegetariano' %}selected{% endif %}>Vegetariano</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label class="mb-2 flex items-center gap-3 text-sm font-medium text-slate-700">
+                    <input type="checkbox" name="comedor_enabled" {% if comedor_selected %}checked{% endif %} />
+                    <span>¿Quieres comedor?</span>
+                  </label>
+                  <div data-days-group="comedor_days" class="mt-2{% if not comedor_selected %} opacity-50{% endif %}">
+                    <div class="flex flex-wrap gap-2">
+                      <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="L" name="comedor_days" class="mr-1" {% if 'L' in comedor_selected %}checked{% endif %} {% if not comedor_selected %}disabled{% endif %}/>L</label>
+                      <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="M" name="comedor_days" class="mr-1" {% if 'M' in comedor_selected %}checked{% endif %} {% if not comedor_selected %}disabled{% endif %}/>M</label>
+                      <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="X" name="comedor_days" class="mr-1" {% if 'X' in comedor_selected %}checked{% endif %} {% if not comedor_selected %}disabled{% endif %}/>X</label>
+                      <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="J" name="comedor_days" class="mr-1" {% if 'J' in comedor_selected %}checked{% endif %} {% if not comedor_selected %}disabled{% endif %}/>J</label>
+                      <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="V" name="comedor_days" class="mr-1" {% if 'V' in comedor_selected %}checked{% endif %} {% if not comedor_selected %}disabled{% endif %}/>V</label>
+                    </div>
+                    <input type="hidden" id="comedor_days" name="comedor_days" value="{{ comedor_selected }}" />
+                  </div>
+                </div>
+                <div>
+                  <label class="mb-2 block text-sm font-medium text-slate-700">Alergias / intolerancias</label>
+                  <div class="flex flex-col gap-2 md:flex-row">
+                    <select data-allergy-select class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm">
+                      <option value="">Selecciona una intolerancia</option>
+                      {% for intolerance in food_intolerance_options %}
+                      <option value="{{ intolerance }}">{{ intolerance }}</option>
+                      {% endfor %}
+                      <option value="__other__">Otro (personalizado)</option>
+                    </select>
+                    <button type="button" data-allergy-add class="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">+ Añadir</button>
+                  </div>
+                  <div data-allergy-custom-wrapper class="mt-2 hidden">
+                    <input data-allergy-custom maxlength="100" class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm" placeholder="Escribe una intolerancia personalizada (máx. 100 caracteres)" />
+                  </div>
+                  <div data-allergy-list class="mt-3 flex flex-wrap gap-2"></div>
+                  <input type="hidden" name="allergies" value="{{ allergies_selected }}" />
+                  <p class="mt-1 text-xs text-slate-500">Puedes añadir múltiples intolerancias y eliminar las que no apliquen.</p>
+                </div>
+              </div>
+
+              <div class="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label class="mb-2 flex items-center gap-3 text-sm font-medium text-slate-700">
+                    <input type="checkbox" name="aula_matinal_enabled" {% if matinal_selected %}checked{% endif %} />
+                    <span>¿Quieres aula matinal?</span>
+                  </label>
+                  <div data-days-group="aula_matinal_days" class="mt-2{% if not matinal_selected %} opacity-50{% endif %}">
+                    <div class="flex flex-wrap gap-2">
+                      <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="L" name="aula_matinal_days" class="mr-1" {% if 'L' in matinal_selected %}checked{% endif %} {% if not matinal_selected %}disabled{% endif %}/>L</label>
+                      <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="M" name="aula_matinal_days" class="mr-1" {% if 'M' in matinal_selected %}checked{% endif %} {% if not matinal_selected %}disabled{% endif %}/>M</label>
+                      <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="X" name="aula_matinal_days" class="mr-1" {% if 'X' in matinal_selected %}checked{% endif %} {% if not matinal_selected %}disabled{% endif %}/>X</label>
+                      <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="J" name="aula_matinal_days" class="mr-1" {% if 'J' in matinal_selected %}checked{% endif %} {% if not matinal_selected %}disabled{% endif %}/>J</label>
+                      <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="V" name="aula_matinal_days" class="mr-1" {% if 'V' in matinal_selected %}checked{% endif %} {% if not matinal_selected %}disabled{% endif %}/>V</label>
+                    </div>
+                    <input type="hidden" id="aula_matinal_days" name="aula_matinal_days" value="{{ matinal_selected }}" />
+                  </div>
+                </div>
+                <div class="flex items-end"><label class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"><input type="checkbox" name="aula_matinal_breakfast" {% if is_editing_student and editing_student.aula_matinal_breakfast %}checked{% endif %}/> <span>Desayuno incluido</span></label></div>
+              </div>
+
+              <div>
+                <label class="mb-2 block text-sm font-medium text-slate-700">Extraescolares</label>
+                <div class="flex flex-col gap-2 md:flex-row">
+                  <select data-extra-select class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm">
+                    <option value="">Selecciona una actividad</option>
+                    {% for activity in extracurricular_activities %}
+                    <option
+                      value="{{ activity.name }}"
+                      data-price="{{ activity.monthly_price }}"
+                      data-duration="{{ '{:g}'.format(activity.duration_hours) }}"
+                      data-material-required="{% if activity.material_required %}1{% else %}0{% endif %}"
+                      data-schedule="{{ activity.schedule }}"
+                    >
+                      {{ activity.name }}
+                    </option>
+                    {% endfor %}
+                  </select>
+                  <button type="button" data-extra-add class="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">+ Añadir</button>
+                </div>
+                <div data-extra-info class="mt-3 hidden rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-3 text-xs text-indigo-800">
+                  <p class="font-semibold" data-extra-info-name></p>
+                  <p class="mt-1">Precio: <span data-extra-info-price></span></p>
+                  <p>Duración: <span data-extra-info-duration></span></p>
+                  <p>Material extra: <span data-extra-info-material></span></p>
+                  <p>Horario: <span data-extra-info-schedule></span></p>
+                </div>
+                <div data-extra-list class="mt-3 flex flex-wrap gap-2"></div>
+                <input type="hidden" id="extras" name="extras" value="{{ extras_selected }}" />
+                <p class="mt-1 text-xs text-slate-500">Pulsa en una actividad para ver detalle y usa “+ Añadir” para incluirla.</p>
+              </div>
+
+              <button type="submit" class="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-500">Guardar cambios</button>
+            </form>
+            {% endif %}
+          </div>
+
+          {% if profile_saved and not is_editing_student %}
+          <div id="addStudentModal" data-open-on-load="{% if error and active_section == 'estudiantes' %}1{% else %}0{% endif %}" class="fixed inset-0 z-40 hidden bg-slate-900/50 p-4">
+            <div class="mx-auto mt-6 max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-xl md:mt-12">
+              <div class="mb-4 flex items-center justify-between">
+                <h3 class="text-lg font-semibold">Añadir estudiante</h3>
+                <button type="button" data-close-student-modal class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100">Cerrar</button>
+              </div>
+
+              <form method="post" action="/dashboard/student" class="space-y-5" data-student-form>
+                <div class="grid gap-4 md:grid-cols-2">
+                  <div><label class="mb-2 block text-sm font-medium text-slate-700">Nombre</label><input name="first_name" required class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5" /></div>
+                  <div><label class="mb-2 block text-sm font-medium text-slate-700">Apellidos</label><input name="last_name" required class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5" /></div>
+                  <div>
+                    <label class="mb-2 block text-sm font-medium text-slate-700">Curso</label>
+                    <select name="course" required class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5">
+                      <option value="" selected>Selecciona un curso</option>
+                      <option value="4º Infantil">4º Infantil</option>
+                      <option value="5º Infantil">5º Infantil</option>
+                      <option value="6º Infantil">6º Infantil</option>
+                      <option value="1º Primaria">1º Primaria</option>
+                      <option value="2º Primaria">2º Primaria</option>
+                      <option value="3º Primaria">3º Primaria</option>
+                      <option value="4º Primaria">4º Primaria</option>
+                      <option value="5º Primaria">5º Primaria</option>
+                      <option value="6º Primaria">6º Primaria</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="mb-2 block text-sm font-medium text-slate-700">Tipo de menú</label>
+                    <select name="menu_type" class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5">
+                      <option value="estandar">Estándar</option>
+                      <option value="celiaco">Celíaco</option>
+                      <option value="vegetariano">Vegetariano</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label class="mb-2 flex items-center gap-3 text-sm font-medium text-slate-700">
+                      <input type="checkbox" name="comedor_enabled" checked />
+                      <span>¿Quieres comedor?</span>
+                    </label>
+                    <div data-days-group="comedor_days" class="mt-2">
+                      <div class="flex flex-wrap gap-2">
+                        <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="L" name="comedor_days" class="mr-1" />L</label>
+                        <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="M" name="comedor_days" class="mr-1" />M</label>
+                        <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="X" name="comedor_days" class="mr-1" />X</label>
+                        <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="J" name="comedor_days" class="mr-1" />J</label>
+                        <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="V" name="comedor_days" class="mr-1" />V</label>
+                      </div>
+                      <input type="hidden" id="comedor_days" name="comedor_days" value="" />
+                    </div>
+                  </div>
+                  <div>
+                    <label class="mb-2 block text-sm font-medium text-slate-700">Alergias / intolerancias</label>
+                    <div class="flex flex-col gap-2 md:flex-row">
+                      <select data-allergy-select class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm">
+                        <option value="">Selecciona una intolerancia</option>
+                        {% for intolerance in food_intolerance_options %}
+                        <option value="{{ intolerance }}">{{ intolerance }}</option>
+                        {% endfor %}
+                        <option value="__other__">Otro (personalizado)</option>
+                      </select>
+                      <button type="button" data-allergy-add class="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">+ Añadir</button>
+                    </div>
+                    <div data-allergy-custom-wrapper class="mt-2 hidden">
+                      <input data-allergy-custom maxlength="100" class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm" placeholder="Escribe una intolerancia personalizada (máx. 100 caracteres)" />
+                    </div>
+                    <div data-allergy-list class="mt-3 flex flex-wrap gap-2"></div>
+                    <input type="hidden" name="allergies" value="" />
+                    <p class="mt-1 text-xs text-slate-500">Puedes añadir múltiples intolerancias y eliminar las que no apliquen.</p>
+                  </div>
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label class="mb-2 flex items-center gap-3 text-sm font-medium text-slate-700">
+                      <input type="checkbox" name="aula_matinal_enabled" />
+                      <span>¿Quieres aula matinal?</span>
+                    </label>
+                    <div data-days-group="aula_matinal_days" class="mt-2 opacity-50">
+                      <div class="flex flex-wrap gap-2">
+                        <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="L" name="aula_matinal_days" class="mr-1" disabled />L</label>
+                        <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="M" name="aula_matinal_days" class="mr-1" disabled />M</label>
+                        <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="X" name="aula_matinal_days" class="mr-1" disabled />X</label>
+                        <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="J" name="aula_matinal_days" class="mr-1" disabled />J</label>
+                        <label class="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"><input type="checkbox" value="V" name="aula_matinal_days" class="mr-1" disabled />V</label>
+                      </div>
+                      <input type="hidden" id="aula_matinal_days" name="aula_matinal_days" value="" />
+                    </div>
+                  </div>
+                  <div class="flex items-end"><label class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"><input type="checkbox" name="aula_matinal_breakfast" /> <span>Desayuno incluido</span></label></div>
+                </div>
+
+                <div>
+                  <label class="mb-2 block text-sm font-medium text-slate-700">Extraescolares</label>
+                  <div class="flex flex-col gap-2 md:flex-row">
+                    <select data-extra-select class="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm">
+                      <option value="">Selecciona una actividad</option>
+                      {% for activity in extracurricular_activities %}
+                      <option
+                        value="{{ activity.name }}"
+                        data-price="{{ activity.monthly_price }}"
+                        data-duration="{{ '{:g}'.format(activity.duration_hours) }}"
+                        data-material-required="{% if activity.material_required %}1{% else %}0{% endif %}"
+                        data-schedule="{{ activity.schedule }}"
+                      >
+                        {{ activity.name }}
+                      </option>
+                      {% endfor %}
+                    </select>
+                    <button type="button" data-extra-add class="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">+ Añadir</button>
+                  </div>
+                  <div data-extra-info class="mt-3 hidden rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-3 text-xs text-indigo-800">
+                    <p class="font-semibold" data-extra-info-name></p>
+                    <p class="mt-1">Precio: <span data-extra-info-price></span></p>
+                    <p>Duración: <span data-extra-info-duration></span></p>
+                    <p>Material extra: <span data-extra-info-material></span></p>
+                    <p>Horario: <span data-extra-info-schedule></span></p>
+                  </div>
+                  <div data-extra-list class="mt-3 flex flex-wrap gap-2"></div>
+                  <input type="hidden" id="extras" name="extras" value="" />
+                  <p class="mt-1 text-xs text-slate-500">Pulsa en una actividad para ver detalle y usa “+ Añadir” para incluirla.</p>
+                </div>
+
+                <div class="flex gap-2">
+                  <button type="submit" class="rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-500">Guardar alumno</button>
+                  <button type="button" data-close-student-modal class="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-100">Cancelar</button>
+                </div>
+              </form>
+            </div>
+          </div>
+          {% endif %}
+          {% endif %}
+        </section>
+      </div>
+    </div>
+  </body>
+</html>

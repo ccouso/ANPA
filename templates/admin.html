@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin | ANPA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flowbite@2.3.0/dist/flowbite.min.js"></script>
+  </head>
+  <body class="bg-slate-50 min-h-screen text-slate-900">
+    <div class="mx-auto max-w-7xl px-4 py-8">
+      <header class="mb-8 flex flex-col gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
+        <div>
+          <p class="text-sm uppercase tracking-[0.2em] text-indigo-600">Administración</p>
+          <h1 class="mt-2 text-3xl font-bold">Panel de gestión</h1>
+        </div>
+        <div class="flex items-center gap-3">
+          <a href="/admin/export-sepa" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Generar remesa SEPA</a>
+          <form method="post" action="/logout">
+            <button type="submit" class="rounded-xl border border-slate-200 bg-slate-100 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">Cerrar sesión</button>
+          </form>
+        </div>
+      </header>
+
+      <div class="mb-8 grid gap-4 md:grid-cols-4">
+        <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p class="text-sm text-slate-500">Total alumnos</p>
+          <p class="mt-3 text-3xl font-bold">{{ total_students }}</p>
+        </div>
+        <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p class="text-sm text-slate-500">Menú estándar</p>
+          <p class="mt-3 text-3xl font-bold">{{ menu_counts.get('estandar', 0) }}</p>
+        </div>
+        <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p class="text-sm text-slate-500">Menú celíaco</p>
+          <p class="mt-3 text-3xl font-bold">{{ menu_counts.get('celiaco', 0) }}</p>
+        </div>
+        <div class="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p class="text-sm text-slate-500">Total a facturar</p>
+          <p class="mt-3 text-3xl font-bold">{{ total_facturado }} €</p>
+        </div>
+      </div>
+
+      <div class="mb-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="mb-4 flex items-center justify-between gap-3">
+          <h2 class="text-xl font-semibold">Extraescolares</h2>
+          <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{{ activities|length }} actividad(es)</span>
+        </div>
+
+        {% if activity_status == 'created' %}
+        <div class="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">Actividad creada correctamente.</div>
+        {% elif activity_status == 'updated' %}
+        <div class="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-700">La actividad ya existía y se han actualizado sus datos.</div>
+        {% elif activity_status == 'empty_name' %}
+        <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">El nombre de la actividad es obligatorio.</div>
+        {% elif activity_status == 'invalid_price' %}
+        <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">El precio no puede ser negativo.</div>
+        {% elif activity_status == 'invalid_duration' %}
+        <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">La duración debe ser mayor que 0 horas.</div>
+        {% elif activity_status == 'empty_schedule' %}
+        <div class="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Debes indicar un horario para la actividad.</div>
+        {% endif %}
+
+        <form method="post" action="/admin/activities" class="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div>
+            <label class="mb-2 block text-sm font-medium text-slate-700">Nombre de la actividad</label>
+            <input name="name" required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Ej. Teatro" />
+          </div>
+          <div>
+            <label class="mb-2 block text-sm font-medium text-slate-700">Precio mensual (€)</label>
+            <input name="monthly_price" type="number" min="0" step="0.01" value="0" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+          </div>
+          <div>
+            <label class="mb-2 block text-sm font-medium text-slate-700">Duración</label>
+            <select name="duration_hours" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200">
+              <option value="1">1 hora</option>
+              <option value="1.5">1.5 horas</option>
+            </select>
+          </div>
+          <div>
+            <label class="mb-2 block text-sm font-medium text-slate-700">Horario</label>
+            <input name="schedule" value="Lunes 16:00" required class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" />
+          </div>
+          <div class="xl:col-span-5 flex flex-wrap items-center gap-4">
+            <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" name="material_required" class="rounded border-slate-300" />
+              <span>Requiere material extra</span>
+            </label>
+            <button type="submit" class="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">Añadir actividad</button>
+          </div>
+        </form>
+
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p class="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Actividades disponibles para familias</p>
+          <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {% for activity in activities %}
+            <div class="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700">
+              <p class="font-semibold text-slate-900">{{ activity.name }}</p>
+              <p class="mt-1">Precio: {{ '{:.2f}'.format(activity.monthly_price) }} € / mes</p>
+              <p>Duración: {{ '{:g}'.format(activity.duration_hours) }} h</p>
+              <p>Material extra: {{ 'Sí' if activity.material_required else 'No' }}</p>
+              <p>Horario: {{ activity.schedule }}</p>
+            </div>
+            {% else %}
+            <span class="text-sm text-slate-500">No hay actividades registradas todavía.</span>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <h2 class="text-xl font-semibold">Alumnos inscritos</h2>
+          <form method="get" class="flex w-full max-w-md gap-3">
+            <input name="q" value="{{ query }}" class="w-full rounded-xl border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200" placeholder="Buscar alumno o curso" />
+            <button type="submit" class="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800">Buscar</button>
+          </form>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="min-w-full text-left text-sm text-slate-700">
+            <thead class="bg-slate-100 text-slate-600">
+              <tr>
+                <th class="px-4 py-3 font-semibold">Alumno</th>
+                <th class="px-4 py-3 font-semibold">Curso</th>
+                <th class="px-4 py-3 font-semibold">Menú</th>
+                <th class="px-4 py-3 font-semibold">Días comedor</th>
+                <th class="px-4 py-3 font-semibold">Extraescolares</th>
+                <th class="px-4 py-3 font-semibold">Cuota</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for student in students %}
+              <tr class="border-t border-slate-200">
+                <td class="px-4 py-3 font-medium text-slate-900">{{ student.first_name }} {{ student.last_name }}</td>
+                <td class="px-4 py-3">{{ student.course or '-' }}</td>
+                <td class="px-4 py-3">{{ student.menu_type }}</td>
+                <td class="px-4 py-3">{{ student.comedor_days or '-' }}</td>
+                <td class="px-4 py-3">{{ student.extras or '-' }}</td>
+                <td class="px-4 py-3 font-semibold text-indigo-700">{{ '{:.2f}'.format(student_total(student)) }} €</td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="6" class="px-4 py-8 text-center text-slate-500">No hay alumnos con los filtros actuales.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
